@@ -8,7 +8,13 @@ from pathlib import Path
 
 import cv2
 
-from pocketshow.capture import FrameSource, capture_identity, open_capture
+from pocketshow.capture import (
+    FrameSource,
+    capture_identity,
+    looks_like_pocket,
+    open_capture,
+    try_open_pocket,
+)
 from pocketshow.config import Settings, load_settings
 from pocketshow.control import GimbalBus, mix_command
 from pocketshow.detect_track import PersonTracker
@@ -19,6 +25,7 @@ from pocketshow.pocket3.udp import DjiUdpClient
 from pocketshow.recognize import PersonRecognizer
 from pocketshow.target import TargetLock
 from pocketshow.types import FollowCommand, Track
+from pocketshow.watch import StationWatch, hud_line
 
 logger = logging.getLogger("pocketshow")
 WINDOW = "PocketShow"
@@ -127,6 +134,19 @@ def main(argv: list[str] | None = None) -> int:
         gimbal, gimbal_name = build_gimbal(settings, client)
         bus = GimbalBus(settings.gimbal.command)
         capture_kind, capture_name = capture_identity(capture)
+        watch = (
+            StationWatch(
+                settings.watch.status,
+                settings.watch.away_s,
+                settings_path=settings.watch.settings,
+                log_path=settings.watch.log,
+                work_start=settings.watch.work_start,
+                work_end=settings.watch.work_end,
+                workdays=settings.watch.workdays,
+            )
+            if settings.watch.enabled
+            else None
+        )
 
         latest: dict[str, list[Track]] = {"tracks": []}
         if not args.no_preview:
@@ -143,13 +163,43 @@ def main(argv: list[str] | None = None) -> int:
 
         prev = time.monotonic()
         fps = 0.0
+        miss = 0
+        last_pocket_probe = 0.0
         logger.info("跟拍循环已启动。q 退出。")
         while True:
-            frame = capture.read()
+            frame = capture.read() if capture is not None else None
             if frame is None:
-                time.sleep(0.01)
+                miss += 1
+                if watch is not None:
+                    watch.tick([], camera_ok=False)
+                if miss == 1 or miss % 60 == 0:
+                    switched = try_open_pocket(settings.capture, capture_name, force=miss > 20)
+                    if switched is not None:
+                        if capture is not None:
+                            capture.close()
+                        capture = switched
+                        capture_kind, capture_name = capture_identity(capture)
+                        logger.info("已自动切到 %s", capture_name)
+                        miss = 0
+                time.sleep(0.02)
                 continue
-            now = time.monotonic()
+            if miss:
+                miss = 0
+            now_wall = time.monotonic()
+            if (
+                capture is not None
+                and not looks_like_pocket(capture_name, capture_kind)
+                and now_wall - last_pocket_probe > 3.0
+            ):
+                last_pocket_probe = now_wall
+                switched = try_open_pocket(settings.capture, capture_name)
+                if switched is not None:
+                    capture.close()
+                    capture = switched
+                    capture_kind, capture_name = capture_identity(capture)
+                    logger.info("检测到 Pocket 3，已切换视频源 %s", capture_name)
+                    continue
+            now = now_wall
             dt = now - prev
             prev = now
             fps = fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
@@ -158,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
             if recognizer is not None:
                 tracks = recognizer.apply(frame, tracks)
             latest["tracks"] = tracks
+            station = None
+            if watch is not None:
+                station = watch.tick(tracks, camera_ok=True)
             target = locker.update(tracks, dt)
             h, w = frame.shape[:2]
             command: FollowCommand = follow.update(target, w, h, dt, now)
@@ -199,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
                     None,
                 ),
                 control_mode=control_mode,
+                watch_line=hud_line(station) if station is not None else "",
             )
             cv2.imshow(WINDOW, vis)
             key = cv2.waitKey(1) & 0xFF

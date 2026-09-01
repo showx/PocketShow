@@ -14,6 +14,8 @@ class Track:
     person_name: str | None = None
     face_bbox: tuple[float, float, float, float] | None = None
     face_score: float = 0.0
+    live: bool | None = None
+    live_score: float = 0.0
 
     @property
     def area(self) -> float:

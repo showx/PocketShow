@@ -29,12 +29,15 @@ recognize:
   enabled: true
   match_threshold: 0.43   # 达到则认定为已有人物（A/B 约 0.37，不能再低）
   soft_threshold: 0.38    # 弱匹配并入已有人物；同框第二张脸不再开新档
-  dup_threshold: 0.50     # 管理页「疑似同一人」提示
+  dup_threshold: 0.70     # 管理页「疑似同一人」：模板对中位数，同框过的人不会提示
   det_score: 0.7
   enroll_score: 0.88
   enroll_min_face: 36
   enroll_confirm: 18
   auto_enroll: true
+  liveness: true            # 拦纸质照片 / 手机屏幕翻拍
+  liveness_threshold: 0.62
+  liveness_confirm: 5       # 连续通过才认人、才自动登记
   gallery: data/faces.json
   photos: data/faces
 
@@ -53,3 +56,13 @@ wifi:
   ble_timeout_s: 15.0
   video_width: 1280
   video_height: 720
+
+watch:
+  enabled: true
+  away_s: 30              # 离开工位超过这么多秒，管理页报警
+  work_start: "09:00"     # 上班起（只在此时段做离岗检测）
+  work_end: "18:30"       # 下班止
+  workdays: [1, 2, 3, 4, 5]  # 1=周一 … 7=周日
+  status: data/station.json
+  settings: data/watch.json
+  log: data/away.jsonl

@@ -29,12 +29,15 @@ class RecognizeConfig(BaseModel):
     enabled: bool = True
     match_threshold: float = 0.43
     soft_threshold: float = 0.38
-    dup_threshold: float = 0.50
+    dup_threshold: float = 0.70
     det_score: float = 0.7
     enroll_score: float = 0.88
     enroll_min_face: int = 36
     enroll_confirm: int = 18
     auto_enroll: bool = True
+    liveness: bool = True
+    liveness_threshold: float = 0.62
+    liveness_confirm: int = 5
     gallery: str = "data/faces.json"
     photos: str = "data/faces"
 
@@ -69,6 +72,17 @@ class WifiConfig(BaseModel):
     video_height: int = 720
 
 
+class WatchConfig(BaseModel):
+    enabled: bool = True
+    away_s: float = 30.0
+    work_start: str = "09:00"
+    work_end: str = "18:30"
+    workdays: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    status: str = "data/station.json"
+    settings: str = "data/watch.json"
+    log: str = "data/away.jsonl"
+
+
 class Settings(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     detect: DetectConfig = Field(default_factory=DetectConfig)
@@ -76,6 +90,7 @@ class Settings(BaseModel):
     recognize: RecognizeConfig = Field(default_factory=RecognizeConfig)
     gimbal: GimbalConfig = Field(default_factory=GimbalConfig)
     wifi: WifiConfig = Field(default_factory=WifiConfig)
+    watch: WatchConfig = Field(default_factory=WatchConfig)
 
 
 def load_settings(path: str | Path | None) -> Settings:

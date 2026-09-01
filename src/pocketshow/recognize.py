@@ -9,6 +9,7 @@ import numpy as np
 
 from pocketshow.config import RecognizeConfig
 from pocketshow.gallery import FaceGallery, cosine_sim
+from pocketshow.liveness import FaceLiveness, is_live
 from pocketshow.types import Track
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,13 @@ class PersonRecognizer:
         self._input_size: tuple[int, int] | None = None
         self._id_memory: dict[int, tuple[str, str, float]] = {}
         self._pending_enroll: dict[int, int] = {}
+        self._live_hits: dict[int, int] = {}
+        self.liveness: FaceLiveness | None = None
+        if cfg.liveness:
+            try:
+                self.liveness = FaceLiveness()
+            except Exception:
+                logger.exception("活体模型加载失败，照片可能仍会被认成真人")
         logger.info("已加载 %s 个登记人物", len(self.gallery.people))
 
     @property
@@ -191,11 +199,33 @@ class PersonRecognizer:
         self.update_embedding(person, face["embedding"], sim)
         self.gallery.maybe_save_live(person, frame, face["xyxy"])
 
+    def _update_live(self, track: Track, face: dict, frame: np.ndarray) -> bool:
+        if self.liveness is None:
+            track.live = True
+            track.live_score = 1.0
+            return True
+        score = self.liveness.score(frame, face["xyxy"], track.bbox_xyxy)
+        track.live_score = score
+        hits = self._live_hits.get(track.id, 0)
+        if is_live(score, self.cfg.liveness_threshold):
+            hits += 1
+        else:
+            hits = 0
+        self._live_hits[track.id] = hits
+        if hits >= self.cfg.liveness_confirm:
+            track.live = True
+        elif hits == 0:
+            track.live = False
+        else:
+            track.live = None
+        return track.live is True
+
     def apply(self, frame: np.ndarray, tracks: list[Track]) -> list[Track]:
         self.gallery.maybe_reload()
         if not tracks:
             self._id_memory.clear()
             self._pending_enroll.clear()
+            self._live_hits.clear()
             self.gallery.appear.tick({})
             return tracks
         faces = self.detect_faces(frame)
@@ -227,6 +257,9 @@ class PersonRecognizer:
             embedding = face["embedding"]
             fx1, fy1, fx2, fy2 = face["xyxy"]
             face_px = min(fx2 - fx1, fy2 - fy1)
+            if not self._update_live(track, face, frame):
+                self._pending_enroll.pop(track.id, None)
+                continue
             person, sim = self.match(embedding, exclude_ids=used_people, threshold=self.cfg.soft_threshold)
             remembered = self._id_memory.get(track.id)
 
@@ -239,9 +272,17 @@ class PersonRecognizer:
                 mem_person = self.gallery.find(remembered[0])
                 if mem_person is not None and mem_person["id"] not in used_people:
                     mem_sim = self.gallery.score(mem_person, embedding)
-                    self._assign(track, mem_person, max(mem_sim, remembered[2] * 0.9), frame, face)
-                    used_people.add(mem_person["id"])
-                    continue
+                    if mem_sim >= self.cfg.soft_threshold:
+                        if mem_sim >= self.cfg.match_threshold:
+                            self._assign(track, mem_person, mem_sim, frame, face)
+                        else:
+                            track.person_id = mem_person["id"]
+                            track.person_name = mem_person["name"]
+                            track.face_score = mem_sim
+                            self._id_memory[track.id] = (mem_person["id"], mem_person["name"], mem_sim)
+                            self._pending_enroll.pop(track.id, None)
+                        used_people.add(mem_person["id"])
+                        continue
 
             if person is not None and sim >= self.cfg.soft_threshold:
                 self._assign(track, person, sim, frame, face)
@@ -269,8 +310,9 @@ class PersonRecognizer:
                 self._pending_enroll.pop(track.id, None)
 
         alive = {t.id for t in tracks}
+        spoofed = {t.id for t in tracks if t.face_bbox is not None and t.live is not True}
         for track in tracks:
-            if track.person_id or track.id not in self._id_memory:
+            if track.person_id or track.id not in self._id_memory or track.id in spoofed:
                 continue
             pid, name, score = self._id_memory[track.id]
             if pid in used_people:
@@ -281,6 +323,7 @@ class PersonRecognizer:
             used_people.add(pid)
         self._id_memory = {k: v for k, v in self._id_memory.items() if k in alive}
         self._pending_enroll = {k: v for k, v in self._pending_enroll.items() if k in alive}
+        self._live_hits = {k: v for k, v in self._live_hits.items() if k in alive}
         present: dict[str, dict] = {}
         for track in tracks:
             if not track.person_id:
@@ -289,6 +332,7 @@ class PersonRecognizer:
             present[track.person_id] = {
                 "name": track.person_name or (person.get("name") if person else track.person_id),
                 "photo": (person.get("photo") if person else "") or "",
+                "guest": bool(person.get("guest")) if person else False,
             }
         self.gallery.appear.tick(present)
         return tracks
@@ -300,6 +344,15 @@ class PersonRecognizer:
             logger.warning("当前目标没有可用人脸，无法登记")
             return None
         face = max(candidates, key=lambda f: f["score"])
+        if self.liveness is not None:
+            score = self.liveness.score(frame, face["xyxy"], track.bbox_xyxy)
+            track.live_score = score
+            if not is_live(score, self.cfg.liveness_threshold):
+                track.live = False
+                track.face_bbox = face["xyxy"]
+                logger.warning("当前目标像照片/屏幕，未登记")
+                return None
+        track.live = True
         matched, sim = self.match(face["embedding"], threshold=self.cfg.soft_threshold)
         if matched is not None:
             if name:

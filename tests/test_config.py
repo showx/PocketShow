@@ -11,7 +11,13 @@ def test_load_default_yaml():
     assert settings.detect.model == "yolo11n.pt"
     assert settings.gimbal.backend == "stub"
     assert settings.recognize.enabled
+    assert settings.recognize.liveness
     assert settings.follow.deadzone > 0
+    assert settings.watch.enabled
+    assert settings.watch.away_s == 30
+    assert settings.watch.work_start == "09:00"
+    assert settings.watch.work_end == "18:30"
+    assert settings.watch.workdays == [1, 2, 3, 4, 5]
 
 
 def test_stub_gimbal_clamps_and_recenter():

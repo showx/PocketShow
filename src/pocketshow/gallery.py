@@ -121,12 +121,25 @@ class FaceGallery:
         templates.append(vec.tolist())
         person["templates"] = templates[-max_templates:]
 
-    def similar_pairs(self, threshold: float = 0.30) -> list[dict]:
+    def pair_score(self, a: dict, b: dict) -> float:
+        """两条档案有多像。取全部模板对的中位数，避免一张糊脸/侧脸把不同的人拉在一起。"""
+        av = self.person_vectors(a)
+        bv = self.person_vectors(b)
+        if not av or not bv:
+            return 0.0
+        sims = [cosine_sim(x, y) for x in av for y in bv]
+        return float(np.median(np.asarray(sims, dtype=np.float32)))
+
+    def similar_pairs(self, threshold: float = 0.70, min_overlap_s: float = 8.0) -> list[dict]:
         pairs: list[dict] = []
+        skip = self.appear.concurrent_pairs(min_overlap_s=min_overlap_s)
         people = [p for p in self.people if p.get("embedding")]
         for i, a in enumerate(people):
             for b in people[i + 1 :]:
-                sim = max(self.score(a, v) for v in self.person_vectors(b))
+                key = (a["id"], b["id"]) if a["id"] < b["id"] else (b["id"], a["id"])
+                if key in skip:
+                    continue
+                sim = self.pair_score(a, b)
                 if sim >= threshold:
                     pairs.append(
                         {
@@ -212,6 +225,7 @@ class FaceGallery:
             "id": self.next_id(),
             "name": name or self.next_name(),
             "note": "",
+            "guest": False,
             "embedding": embedding.astype(float).tolist(),
             "samples": 1,
             "created_at": stamp,
@@ -315,13 +329,21 @@ class FaceGallery:
         person["updated_at"] = now_iso()
         self.save()
 
-    def rename(self, person_id: str, name: str, note: str | None = None) -> dict:
+    def rename(
+        self,
+        person_id: str,
+        name: str,
+        note: str | None = None,
+        guest: bool | None = None,
+    ) -> dict:
         person = self.find(person_id)
         if person is None:
             raise KeyError(person_id)
         person["name"] = name.strip() or person["name"]
         if note is not None:
             person["note"] = note
+        if guest is not None:
+            person["guest"] = bool(guest)
         person["updated_at"] = now_iso()
         self.save()
         return person
@@ -361,6 +383,7 @@ class FaceGallery:
             "id": pid,
             "name": person.get("name") or pid,
             "note": person.get("note") or "",
+            "guest": bool(person.get("guest")),
             "samples": int(person.get("samples") or 0),
             "created_at": person.get("created_at") or "",
             "updated_at": person.get("updated_at") or "",
@@ -368,7 +391,7 @@ class FaceGallery:
             "photos": photos,
         }
 
-    def public_all(self, dup_threshold: float = 0.50) -> list[dict]:
+    def public_all(self, dup_threshold: float = 0.70) -> list[dict]:
         pairs = self.similar_pairs(dup_threshold)
         twins: dict[str, list[dict]] = {}
         for pair in pairs:

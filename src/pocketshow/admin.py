@@ -33,6 +33,7 @@ def _admin_page() -> str:
 class PatchPerson(BaseModel):
     name: str | None = None
     note: str | None = None
+    guest: bool | None = None
 
 
 class CoverBody(BaseModel):
@@ -49,6 +50,13 @@ class GimbalBody(BaseModel):
     pitch: float | None = None
     recenter: bool = False
     stop: bool = False
+
+
+class WatchPatch(BaseModel):
+    work_start: str | None = None
+    work_end: str | None = None
+    workdays: list[int] | None = None
+    away_s: float | None = None
 
 
 def decode_image(data: bytes) -> np.ndarray:
@@ -68,7 +76,10 @@ def jpeg_from_upload(image: np.ndarray) -> bytes:
     return encode_jpeg(image)
 
 
-def device_status(bus: GimbalBus, *, usb: bool | None = None) -> dict:
+from pocketshow.watch import StationWatch, format_hhmm, normalize_workdays, person_away_today
+
+
+def device_status(bus: GimbalBus, *, usb: bool | None = None, watch: StationWatch | None = None) -> dict:
     info = bus.public()
     follow = bool(info.get("connected"))
     if usb is None:
@@ -101,6 +112,7 @@ def device_status(bus: GimbalBus, *, usb: bool | None = None) -> dict:
         "device": device,
         "detail": " · ".join(parts),
         **info,
+        "watch": watch.public() if watch is not None else {},
     }
 
 
@@ -108,6 +120,15 @@ def create_app(settings: Settings) -> FastAPI:
     cfg = settings.recognize
     gallery = FaceGallery(cfg.gallery, cfg.photos)
     bus = GimbalBus(settings.gimbal.command)
+    watch = StationWatch(
+        settings.watch.status,
+        settings.watch.away_s,
+        settings_path=settings.watch.settings,
+        log_path=settings.watch.log,
+        work_start=settings.watch.work_start,
+        work_end=settings.watch.work_end,
+        workdays=settings.watch.workdays,
+    )
     recognizer: PersonRecognizer | None = None
 
     def get_recognizer() -> PersonRecognizer:
@@ -143,7 +164,7 @@ def create_app(settings: Settings) -> FastAPI:
         person = person_or_404(person_id)
         name = body.name if body.name is not None else person["name"]
         try:
-            person = gallery.rename(person_id, name, note=body.note)
+            person = gallery.rename(person_id, name, note=body.note, guest=body.guest)
         except KeyError as exc:
             raise HTTPException(404, "找不到这个人") from exc
         return gallery.public(person)
@@ -164,9 +185,48 @@ def create_app(settings: Settings) -> FastAPI:
         gallery.maybe_reload()
         return gallery.appear.visits(person_id=person_id, limit=min(max(limit, 1), 500))
 
+    @app.get("/api/present")
+    def list_present() -> dict:
+        return gallery.appear.present()
+
     @app.get("/api/status")
     def get_status() -> dict:
-        return device_status(bus)
+        data = device_status(bus, watch=watch)
+        data["present"] = gallery.appear.present()
+        return data
+
+    def watch_report() -> dict:
+        gallery.maybe_reload()
+        snapshot = gallery.appear.present()
+        present_ids = {str(p.get("person_id")) for p in snapshot.get("people") or []} if snapshot.get("fresh") else set()
+        skip_ids = {str(p.get("id")) for p in gallery.people if p.get("guest")}
+        report = watch.report()
+        report["today"] = person_away_today(
+            gallery.appear.raw_events(),
+            work_start=watch.work_start,
+            work_end=watch.work_end,
+            workdays=watch.workdays,
+            min_s=max(15.0, watch.away_limit_s),
+            alarm_s=watch.away_limit_s,
+            present_ids=present_ids,
+            skip_ids=skip_ids,
+        )
+        return report
+
+    @app.get("/api/watch")
+    def get_watch() -> dict:
+        return watch_report()
+
+    @app.put("/api/watch")
+    def put_watch(body: WatchPatch) -> dict:
+        try:
+            start = format_hhmm(body.work_start) if body.work_start is not None else None
+            end = format_hhmm(body.work_end) if body.work_end is not None else None
+            days = normalize_workdays(body.workdays) if body.workdays is not None else None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        watch.save_settings(work_start=start, work_end=end, workdays=days, away_s=body.away_s)
+        return watch_report()
 
     @app.get("/api/gimbal")
     def get_gimbal() -> dict:

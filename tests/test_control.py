@@ -92,12 +92,17 @@ def test_status_offline_without_pocket(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from pocketshow.admin import create_app
-    from pocketshow.config import GimbalConfig, RecognizeConfig, Settings
+    from pocketshow.config import GimbalConfig, RecognizeConfig, Settings, WatchConfig
 
     monkeypatch.setattr("pocketshow.admin.pocket3_usb_present", lambda ttl=5.0: False)
     settings = Settings(
         recognize=RecognizeConfig(gallery=str(tmp_path / "f.json"), photos=str(tmp_path / "faces")),
         gimbal=GimbalConfig(command=str(tmp_path / "gimbal.json")),
+        watch=WatchConfig(
+            status=str(tmp_path / "station.json"),
+            settings=str(tmp_path / "watch.json"),
+            log=str(tmp_path / "away.jsonl"),
+        ),
     )
     client = TestClient(create_app(settings))
     data = client.get("/api/status").json()
@@ -105,6 +110,8 @@ def test_status_offline_without_pocket(tmp_path, monkeypatch):
     assert data["follow"] is False
     assert data["usb"] is False
     assert "未检测" in data["detail"]
+    assert data["watch"]["state"] == "waiting"
+    assert data["watch"]["alarm"] is False
 
 
 def test_status_online_from_usb(tmp_path, monkeypatch):
@@ -146,3 +153,36 @@ def test_status_online_from_follow_heartbeat(tmp_path, monkeypatch):
     assert data["follow"] is True
     assert data["device"] == "OsmoPocket3"
     assert "跟拍运行中" in data["detail"]
+
+
+def test_watch_hours_api(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from pocketshow.admin import create_app
+    from pocketshow.config import GimbalConfig, RecognizeConfig, Settings, WatchConfig
+
+    monkeypatch.setattr("pocketshow.admin.pocket3_usb_present", lambda ttl=5.0: False)
+    settings = Settings(
+        recognize=RecognizeConfig(gallery=str(tmp_path / "f.json"), photos=str(tmp_path / "faces")),
+        gimbal=GimbalConfig(command=str(tmp_path / "gimbal.json")),
+        watch=WatchConfig(
+            status=str(tmp_path / "station.json"),
+            settings=str(tmp_path / "watch.json"),
+            log=str(tmp_path / "away.jsonl"),
+        ),
+    )
+    client = TestClient(create_app(settings))
+    data = client.get("/api/watch").json()
+    assert data["settings"]["work_start"] == "09:00"
+    assert data["settings"]["work_end"] == "18:30"
+    assert "today" in data
+    saved = client.put(
+        "/api/watch",
+        json={"work_start": "09:00", "work_end": "18:30", "workdays": [1, 2, 3, 4, 5], "away_s": 45},
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["settings"]["away_s"] == 45
+    assert body["settings"]["hours_label"].startswith("工作日")
+    bad = client.put("/api/watch", json={"work_start": "25:00"})
+    assert bad.status_code == 400

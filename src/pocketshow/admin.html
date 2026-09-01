@@ -6,157 +6,336 @@
   <title>PocketShow 人物库</title>
   <style>
     :root {
-      --bg: #101114;
-      --panel: #181a20;
-      --card: #1e2128;
-      --line: #2c303a;
-      --text: #eceef2;
-      --muted: #8b909c;
-      --green: #3dcc6f;
-      --danger: #ef5b5b;
-      --accent: #6aa4ff;
+      --bg: #09090a;
+      --panel: #121214;
+      --card: #161618;
+      --line: rgba(255,255,255,.08);
+      --line-strong: rgba(255,255,255,.14);
+      --text: #f3f2ee;
+      --muted: #8c8b86;
+      --faint: #5c5b57;
+      --cream: #ece7dc;
+      --ink: #121212;
+      --live: #8fbf9a;
+      --warn: #d4b37a;
+      --danger: #d46767;
+      --guest: #a7b4c4;
+      --green: #8fbf9a;
+      --accent: #ece7dc;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif; }
+    [hidden] { display: none !important; }
+    html, body {
+      margin: 0; min-height: 100%; color: var(--text);
+      font-family: "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+      background:
+        radial-gradient(1100px 420px at 8% -8%, rgba(236,231,220,.07), transparent 55%),
+        var(--bg);
+      letter-spacing: .01em;
+    }
+    .chrome {
+      position: sticky; top: 0; z-index: 5;
+      background: rgba(9,9,10,.88); backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--line);
+    }
     header {
-      display: flex; align-items: center; justify-content: space-between; gap: 16px;
-      padding: 20px 28px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
-      background: rgba(16,17,20,.92); backdrop-filter: blur(12px); z-index: 5;
+      display: flex; align-items: center; justify-content: space-between; gap: 20px;
+      padding: 18px 28px 12px; background: transparent;
       flex-wrap: wrap;
     }
-    h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .02em; }
-    h1 span { color: var(--green); }
-    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .device-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 160px; }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+    .mark {
+      width: 34px; height: 34px; border-radius: 10px; flex: none;
+      display: grid; place-items: center;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(180deg, #1c1c1f, #101012);
+    }
+    .mark span {
+      width: 13px; height: 13px; border-radius: 50%;
+      border: 1.5px solid var(--cream);
+      box-shadow: inset 0 0 0 3px #101012;
+    }
+    h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .08em; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .header-end { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-left: auto; }
+    .device-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .device-pill {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 650;
-      border: 1px solid var(--line); background: var(--card);
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+      border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--muted);
     }
     .device-pill i {
-      width: 8px; height: 8px; border-radius: 50%; background: #6b7280;
-      box-shadow: 0 0 0 3px rgba(107,114,128,.18);
+      width: 6px; height: 6px; border-radius: 50%; background: #6b6a66;
     }
-    .device-pill.on { color: var(--green); border-color: #245c38; background: #14241a; }
-    .device-pill.on i { background: var(--green); box-shadow: 0 0 0 3px rgba(61,204,111,.22); }
+    .device-pill.on { color: var(--live); border-color: rgba(143,191,154,.28); background: rgba(143,191,154,.08); }
+    .device-pill.on i { background: var(--live); box-shadow: 0 0 0 3px rgba(143,191,154,.18); }
     .device-pill.off { color: var(--muted); }
-    .device-detail { color: var(--muted); font-size: 12px; max-width: 280px; text-align: right; line-height: 1.35; }
-    input[type="search"], input[type="text"], textarea {
-      background: var(--card); color: var(--text); border: 1px solid var(--line);
-      border-radius: 10px; padding: 10px 12px; font: inherit;
+    .device-detail { color: var(--faint); font-size: 11px; max-width: 360px; text-align: right; line-height: 1.4; }
+    .station-pill.desk { color: var(--live); border-color: rgba(143,191,154,.28); background: rgba(143,191,154,.08); }
+    .station-pill.desk i { background: var(--live); }
+    .station-pill.away { color: var(--warn); border-color: rgba(212,179,122,.28); background: rgba(212,179,122,.08); }
+    .station-pill.away i { background: var(--warn); }
+    .station-pill.alarm { color: #fff; border-color: rgba(212,103,103,.45); background: #7a2a2a; }
+    .station-pill.alarm i { background: #fff; }
+    .station-pill.offduty { color: var(--muted); }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 0 28px 16px;
+      flex-wrap: wrap;
     }
-    input[type="search"] { min-width: 220px; }
+    .tabs {
+      display: flex; padding: 4px; gap: 2px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 12px;
+    }
+    .tabs button {
+      background: transparent; color: var(--muted); border: 0; box-shadow: none;
+      padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    }
+    .tabs button:hover { color: var(--text); background: rgba(255,255,255,.04); }
+    .tabs button.active { background: var(--cream); color: var(--ink); }
+    .nav-end { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .alarm-bar {
+      display: none;
+      position: sticky; top: 0; z-index: 6;
+      margin: 0; padding: 12px 28px;
+      background: #6e2424; color: #fff;
+      font-size: 14px; font-weight: 600; letter-spacing: .06em;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    .alarm-bar.show { display: flex; align-items: center; gap: 12px; }
+    .alarm-bar span { font-size: 13px; font-weight: 400; opacity: .88; letter-spacing: 0; }
+    body.alarming { background: #120c0c; }
+    body.alarming .chrome { border-bottom-color: rgba(212,103,103,.35); }
+    input[type="search"], input[type="text"], input[type="time"], input[type="number"], textarea, select {
+      background: var(--card); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 9px 12px; font: inherit;
+    }
+    input[type="search"] { min-width: 200px; background: rgba(255,255,255,.03); }
+    input:focus, textarea:focus, select:focus {
+      outline: none; border-color: rgba(236,231,220,.35);
+    }
     textarea { width: 100%; min-height: 72px; resize: vertical; }
     button, .btn {
-      border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer;
-      background: var(--green); color: #062; font-weight: 650;
+      border: 0; border-radius: 8px; padding: 9px 14px; font: inherit; cursor: pointer;
+      background: var(--cream); color: var(--ink); font-weight: 600;
     }
-    button.ghost, .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
-    button.danger { background: var(--danger); color: #fff; }
-    button:disabled { opacity: .5; cursor: default; }
-    main { padding: 24px 28px 80px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
-    .card {
-      background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
-      cursor: pointer; transition: transform .15s ease, border-color .15s ease;
+    button:hover, .btn:hover { filter: brightness(1.04); }
+    button.ghost, .btn.ghost {
+      background: transparent; color: var(--text); border: 1px solid var(--line);
+      font-weight: 500;
     }
-    .card:hover { transform: translateY(-2px); border-color: #414655; }
+    button.ghost:hover { background: rgba(255,255,255,.04); border-color: var(--line-strong); }
+    button.danger { background: transparent; color: var(--danger); border: 1px solid rgba(212,103,103,.35); }
+    button.danger:hover { background: rgba(212,103,103,.12); }
+    button:disabled { opacity: .45; cursor: default; filter: none; }
+    button:focus-visible, .btn:focus-visible, input:focus-visible {
+      outline: 2px solid rgba(236,231,220,.35); outline-offset: 2px;
+    }
+    #btnCam.active { border-color: var(--cream); color: var(--cream); }
+    main { padding: 28px 28px 96px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 18px; }
+    .card, .present-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+      cursor: pointer; transition: border-color .18s ease, background .18s ease;
+    }
+    .card:hover, .present-card:hover { border-color: var(--line-strong); background: #1a1a1c; }
     .thumb {
-      aspect-ratio: 3 / 4; background: #12141a center/cover no-repeat;
-      display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
+      aspect-ratio: 3 / 4; background: #0e0e10 center/cover no-repeat;
+      display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px;
     }
     .meta { padding: 12px 14px 14px; }
-    .meta strong { display: block; font-size: 16px; }
-    .meta small { color: var(--muted); }
-    .badge { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; background: #3a2a12; color: #f3c56b; font-size: 12px; }
+    .meta strong { display: block; font-size: 15px; font-weight: 600; }
+    .meta small { color: var(--muted); font-size: 12px; display: block; margin-top: 3px; }
+    .badge {
+      display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 999px;
+      background: rgba(212,179,122,.12); color: var(--warn); font-size: 11px; letter-spacing: .04em;
+    }
+    .badge.guest { background: rgba(167,180,196,.12); color: var(--guest); }
+    strong .badge { margin-top: 0; margin-left: 8px; vertical-align: middle; font-weight: 500; }
+    .check {
+      display: flex; align-items: flex-start; gap: 10px;
+      margin: 16px 0 6px; color: var(--text); font-size: 14px; cursor: pointer;
+    }
+    .check input { margin-top: 3px; accent-color: var(--cream); }
     .banner {
-      margin: 0 28px 16px; padding: 12px 16px; border-radius: 12px;
-      background: #2a2418; border: 1px solid #5a4a28; color: #f3c56b; font-size: 14px;
+      margin: 0 0 18px; padding: 12px 16px; border-radius: 10px;
+      background: rgba(212,179,122,.08); border: 1px solid rgba(212,179,122,.22); color: var(--warn); font-size: 13px;
     }
     .banner button { margin-left: 8px; padding: 6px 10px; font-size: 13px; }
-    .empty { text-align: center; padding: 80px 20px; color: var(--muted); }
+    .empty { text-align: center; padding: 88px 20px; color: var(--muted); line-height: 1.7; }
     .drawer {
-      position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10;
+      position: fixed; inset: 0; background: rgba(0,0,0,.58); display: none; z-index: 10;
+      backdrop-filter: blur(6px);
     }
     .drawer.open { display: block; }
     .panel {
-      position: absolute; right: 0; top: 0; height: 100%; width: min(460px, 100%);
-      background: var(--panel); border-left: 1px solid var(--line); overflow: auto; padding: 22px;
+      position: absolute; right: 0; top: 0; height: 100%; width: min(440px, 100%);
+      background: var(--panel); border-left: 1px solid var(--line); overflow: auto; padding: 26px 24px 48px;
     }
-    .cover { width: 100%; border-radius: 14px; background: #12141a; min-height: 280px; object-fit: cover; display: block; }
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+    .kicker { margin: 0 0 4px; color: var(--faint); font-size: 11px; letter-spacing: .14em; }
+    .panel-head strong { font-size: 18px; }
+    .cover { width: 100%; border-radius: 10px; background: #0e0e10; min-height: 280px; object-fit: cover; display: block; }
     .row { display: flex; gap: 8px; margin: 12px 0; }
-    label { display: block; color: var(--muted); font-size: 12px; margin: 14px 0 6px; }
+    label { display: block; color: var(--muted); font-size: 12px; margin: 16px 0 6px; letter-spacing: .04em; }
     .snaps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .snaps img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; cursor: pointer; border: 2px solid transparent; }
-    .snaps img.cover { border-color: var(--green); }
-    .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .snaps img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+    .snaps img.cover { border-color: var(--cream); }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.55; }
     .toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      background: #222; border: 1px solid var(--line); padding: 10px 16px; border-radius: 999px;
-      display: none; z-index: 20;
+      background: rgba(18,18,20,.92); border: 1px solid var(--line-strong);
+      padding: 10px 16px; border-radius: 999px; display: none; z-index: 20;
+      backdrop-filter: blur(12px); font-size: 13px;
     }
     .drop {
-      border: 1px dashed var(--line); border-radius: 12px; padding: 16px; text-align: center;
-      color: var(--muted); margin-top: 8px;
+      border: 1px dashed var(--line-strong); border-radius: 10px; padding: 18px; text-align: center;
+      color: var(--muted); margin-top: 8px; background: rgba(255,255,255,.02);
     }
-    .log { display: flex; flex-direction: column; gap: 8px; }
+    .log { display: flex; flex-direction: column; gap: 8px; max-width: 820px; }
     .visit {
       display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center;
-      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
     }
+    .visit:hover { border-color: var(--line-strong); }
     .visit img, .visit .ph {
-      width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #12141a;
+      width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #0e0e10;
     }
-    .visit .ph { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
-    .visit strong { display: block; }
+    .visit .ph { display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px; }
+    .visit strong { display: block; font-weight: 600; }
     .visit small { color: var(--muted); }
-    .tag { font-size: 12px; padding: 4px 8px; border-radius: 999px; background: #1d2a22; color: var(--green); white-space: nowrap; }
-    .tag.off { background: #22242a; color: var(--muted); }
-    button.active { box-shadow: 0 0 0 2px #1f5c38; }
+    .tag { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(143,191,154,.12); color: var(--live); white-space: nowrap; letter-spacing: .04em; }
+    .tag.off { background: rgba(255,255,255,.04); color: var(--muted); }
     .dock {
+      display: none;
       position: fixed; right: 20px; bottom: 20px; z-index: 8;
-      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-      padding: 14px; width: 220px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+      background: rgba(18,18,20,.94); border: 1px solid var(--line); border-radius: 14px;
+      padding: 14px; width: 228px; box-shadow: 0 24px 60px rgba(0,0,0,.45);
+      backdrop-filter: blur(16px);
     }
-    .dock h2 { margin: 0 0 8px; font-size: 14px; }
+    .dock.open { display: block; }
+    .dock-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .dock h2 { margin: 0; font-size: 13px; letter-spacing: .08em; font-weight: 600; }
+    .dock .close { padding: 4px 10px; font-size: 12px; }
     .pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0; }
-    .pad button { padding: 12px 0; font-size: 14px; }
-    .pad .ghost { background: var(--card); }
+    .pad button { padding: 12px 0; font-size: 13px; }
     .dock .status { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 8px; }
-    .dock .status.warn { color: #f3c56b; }
-    .dock input[type="range"] { width: 100%; }
-    main { padding-bottom: 220px; }
+    .dock .status.warn { color: var(--warn); }
+    .dock input[type="range"] { width: 100%; accent-color: var(--cream); }
+    body.dock-open main { padding-bottom: 240px; }
+    .watch-panel { display: flex; flex-direction: column; gap: 14px; max-width: 920px; }
+    .watch-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px;
+    }
+    .watch-card h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .08em; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .stat { background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; }
+    .stat b { display: block; font-size: 22px; margin-top: 6px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .stat span { color: var(--muted); font-size: 11px; letter-spacing: .06em; }
+    .hours-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .hours-row label { margin: 0; }
+    .hours-row input[type="time"] { width: 140px; }
+    .hours-row input[type="number"] { width: 110px; }
+    .days { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+    .day {
+      border: 1px solid var(--line); background: transparent; color: var(--muted);
+      border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .day.on { color: var(--ink); border-color: var(--cream); background: var(--cream); }
+    .session {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+      background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
+    }
+    .session .tag.alarm { background: rgba(212,103,103,.12); color: var(--danger); }
+    .rank {
+      display: grid; grid-template-columns: 28px 44px 1fr auto; gap: 10px; align-items: center;
+      padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer;
+    }
+    .rank:first-of-type { border-top: 0; }
+    .rank .n { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .rank img, .rank .ph {
+      width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: #0e0e10;
+    }
+    .rank .ph { display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px; }
+    .session small, .rank small { display: block; margin-top: 3px; color: var(--muted); }
+    .stat.danger b { color: var(--danger); }
+    .present-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 18px; }
+    .present-card { border-color: rgba(143,191,154,.28); }
+    .present-card .thumb { position: relative; }
+    .live-flag {
+      position: absolute; left: 10px; top: 10px;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      background: rgba(10,12,10,.78); color: var(--live); border: 1px solid rgba(143,191,154,.28);
+      backdrop-filter: blur(8px);
+    }
+    .live-flag i {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--live);
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .35; }
+    }
+    @media (max-width: 820px) {
+      header, .nav, main { padding-left: 16px; padding-right: 16px; }
+      input[type="search"] { min-width: 0; width: 140px; }
+    }
   </style>
 </head>
 <body>
+  <div class="chrome">
   <header>
-    <div>
-      <h1>PocketShow <span>人物库</span></h1>
-      <div class="sub" id="summary">正在读取名册…</div>
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><span></span></div>
+      <div>
+        <h1>POCKETSHOW</h1>
+        <div class="sub" id="summary">正在读取名册…</div>
+      </div>
     </div>
-    <div class="device-status" id="deviceStatus">
-      <span class="device-pill off" id="devicePill"><i></i> Pocket 3 离线</span>
-      <span class="device-detail" id="deviceDetail">正在检测设备…</span>
-    </div>
-    <div class="toolbar">
-      <input id="q" type="search" placeholder="搜索姓名 / 备注" />
-      <button type="button" class="ghost" id="btnLog">入镜日志</button>
+    <div class="header-end">
+      <div class="device-status" id="deviceStatus">
+        <div class="pills">
+          <span class="device-pill off" id="devicePill"><i></i> Pocket 3 离线</span>
+          <span class="device-pill station-pill off" id="stationPill"><i></i> 工位等待</span>
+        </div>
+        <span class="device-detail" id="deviceDetail">正在检测设备…</span>
+      </div>
       <button type="button" id="btnNew">登记新人</button>
     </div>
   </header>
+  <nav class="nav">
+    <div class="tabs" role="tablist">
+      <button type="button" class="active" id="btnPeople">人物库</button>
+      <button type="button" id="btnPresent">在镜中</button>
+      <button type="button" id="btnLog">入镜日志</button>
+      <button type="button" id="btnWatch">离岗分析</button>
+    </div>
+    <div class="nav-end">
+      <input id="q" type="search" placeholder="搜索姓名 / 备注" />
+      <button type="button" class="ghost" id="btnCam">镜头</button>
+    </div>
+  </nav>
+  </div>
+  <div id="alarmBar" class="alarm-bar" hidden>离岗报警<span id="alarmDetail"></span></div>
   <main>
     <div id="banner" class="banner" hidden></div>
     <div id="grid" class="grid"></div>
     <div id="log" class="log" hidden></div>
-    <div id="empty" class="empty" hidden>还没有相片留底。打开跟拍后会自动抓脸，也可以点右上角「登记新人」上传照片。</div>
+    <div id="presentPanel" hidden></div>
+    <div id="watchPanel" class="watch-panel" hidden></div>
+    <div id="empty" class="empty" hidden>还没有相片留底。打开跟拍后会自动抓脸，也可以点「登记新人」上传照片。</div>
   </main>
   <div id="drawer" class="drawer">
     <div class="panel" id="panel"></div>
   </div>
   <div id="toast" class="toast"></div>
   <aside class="dock" id="dock">
-    <h2>镜头</h2>
+    <div class="dock-head">
+      <h2>镜头</h2>
+      <button type="button" class="ghost close" id="btnCamClose">关闭</button>
+    </div>
     <div class="row" style="margin:0 0 8px">
       <button type="button" class="ghost" id="camFollow">跟拍</button>
       <button type="button" class="ghost" id="camCenter">回中</button>
@@ -179,6 +358,9 @@
     let selected = null;
     let view = "people";
     let visits = [];
+    let watchReport = null;
+    let present = { people: [], count: 0, fresh: false };
+    const WEEKDAYS = [[1, "一"], [2, "二"], [3, "三"], [4, "四"], [5, "五"], [6, "六"], [7, "日"]];
 
     async function api(path, opts) {
       const res = await fetch(path, opts);
@@ -194,18 +376,45 @@
       setTimeout(() => { el.style.display = "none"; }, 2200);
     }
 
+    function showView(name) {
+      view = name;
+      const panels = {
+        people: ["grid", "banner", "empty"],
+        log: ["log"],
+        present: ["presentPanel"],
+        watch: ["watchPanel"],
+      };
+      for (const id of ["grid", "banner", "empty", "log", "presentPanel", "watchPanel"]) {
+        $(id).hidden = !(panels[name] || []).includes(id);
+      }
+      $("btnPeople").classList.toggle("active", name === "people");
+      $("btnWatch").classList.toggle("active", name === "watch");
+      $("btnLog").classList.toggle("active", name === "log");
+      $("btnPresent").classList.toggle("active", name === "present");
+    }
+
     function render() {
+      if (view === "present") {
+        showView("present");
+        $("q").placeholder = "筛选在镜中的人";
+        renderPresent();
+        return;
+      }
+      if (view === "watch") {
+        showView("watch");
+        $("q").placeholder = "筛选离岗记录";
+        renderWatch();
+        return;
+      }
       if (view === "log") {
-        $("grid").hidden = true;
-        $("empty").hidden = true;
-        $("banner").hidden = true;
-        $("log").hidden = false;
-        $("btnLog").classList.add("active");
+        showView("log");
         $("q").placeholder = "筛选姓名";
-        $("summary").textContent = visits.length ? `最近 ${visits.length} 条入镜记录` : "暂无入镜记录";
+        $("summary").textContent = visits.filter((v) => !v.live).length
+          ? `最近 ${visits.filter((v) => !v.live).length} 条入镜记录`
+          : "暂无入镜记录";
         const q = $("q").value.trim().toLowerCase();
         const list = visits.filter((v) =>
-          !q || (v.name + " " + v.person_id).toLowerCase().includes(q)
+          !v.live && (!q || (v.name + " " + v.person_id).toLowerCase().includes(q))
         );
         if (!list.length) {
           $("log").innerHTML = `<div class="empty" style="padding:40px 0">还没有入镜记录。打开跟拍后，识别到的人会按次记在这里。</div>`;
@@ -215,40 +424,34 @@
           <article class="visit" data-id="${v.person_id}">
             ${v.photo ? `<img src="/media/${v.photo}" alt="" />` : `<div class="ph">无图</div>`}
             <div>
-              <strong>${escapeHtml(v.name)}</strong>
+              <strong>${escapeHtml(v.name)}${isGuestId(v.person_id) ? `<span class="badge guest">客人</span>` : ""}</strong>
               <small>${escapeHtml(v.start || "")}${v.end ? " → " + escapeHtml(v.end) : ""} · ${escapeHtml(v.duration || "")}${v.frames ? " · " + v.frames + " 帧" : ""}</small>
             </div>
-            <span class="tag ${v.live ? "" : "off"}">${v.live ? "在镜中" : "已离镜"}</span>
+            <span class="tag off">已离镜</span>
           </article>
         `).join("");
         for (const row of $("log").querySelectorAll(".visit")) {
           row.style.cursor = "pointer";
           row.onclick = () => {
             view = "people";
-            $("btnLog").classList.remove("active");
-            $("log").hidden = true;
-            $("grid").hidden = false;
-            $("q").placeholder = "搜索姓名 / 备注";
             render();
             openPerson(row.dataset.id);
           };
         }
         return;
       }
-      $("log").hidden = true;
-      $("grid").hidden = false;
-      $("btnLog").classList.remove("active");
+      showView("people");
       $("q").placeholder = "搜索姓名 / 备注";
       const q = $("q").value.trim().toLowerCase();
       const list = people.filter((p) =>
-        !q || (p.name + " " + (p.note || "") + " " + p.id).toLowerCase().includes(q)
+        !q || (p.name + " " + (p.note || "") + " " + p.id + (p.guest ? " 客人 guest" : "")).toLowerCase().includes(q)
       );
       $("summary").textContent = people.length ? `共 ${people.length} 人` : "空名册";
       const dups = people.flatMap((p) => p.twins || []).filter((x, i, arr) => arr.findIndex((y) => y.a === x.a && y.b === x.b) === i);
       const banner = $("banner");
       if (dups.length) {
         banner.hidden = false;
-        banner.innerHTML = `发现 ${dups.length} 组疑似同一人（侧脸/光线变化容易拆档）。打开卡片，把重复的一条「并入」另一个。`;
+        banner.innerHTML = `发现 ${dups.length} 组高相似度档案（≥70%）。打开卡片确认后，把重复的一条「并入」另一个。`;
       } else {
         banner.hidden = true;
         banner.textContent = "";
@@ -262,12 +465,185 @@
           <div class="meta">
             <strong>${escapeHtml(p.name)}</strong>
             <small>${p.samples} 次入镜${p.updated_at ? " · " + p.updated_at : ""}</small>
-            ${p.twins && p.twins.length ? `<div class="badge">疑似与 ${escapeHtml(twinName(p))} 为同一人</div>` : ""}
+            ${p.guest ? `<div class="badge guest">客人</div>` : ""}
+            ${p.twins && p.twins.length ? `<div class="badge">疑似与 ${twinBadge(p)} 为同一人</div>` : ""}
           </div>
         </article>
       `).join("");
       for (const card of $("grid").querySelectorAll(".card")) {
         card.onclick = () => openPerson(card.dataset.id);
+      }
+    }
+
+    function escapeHtml(s) {
+      const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+      return String(s).replace(/[&<>"']/g, (c) => map[c]);
+    }
+
+    function selectedDays() {
+      return WEEKDAYS.filter(([id]) => {
+        const el = document.querySelector(`.day[data-day="${id}"]`);
+        return el && el.classList.contains("on");
+      }).map(([id]) => id);
+    }
+
+    function renderPresent() {
+      const rows = present.people || [];
+      const q = $("q").value.trim().toLowerCase();
+      const list = rows.filter((p) => !q || ((p.name || "") + " " + (p.person_id || "")).toLowerCase().includes(q));
+      if (present.fresh) {
+        $("summary").textContent = rows.length ? `镜头里 ${rows.length} 人` : "镜头里现在没人";
+      } else {
+        $("summary").textContent = "跟拍未在更新在镜名单";
+      }
+      if (!list.length) {
+        $("presentPanel").innerHTML = `<div class="empty" style="padding:80px 20px">${present.fresh ? "镜头里现在没人。" : "打开跟拍后，识别到的人会出现在这里。"}</div>`;
+        return;
+      }
+      $("presentPanel").innerHTML = `<div class="present-grid">${list.map((p) => `
+        <article class="present-card" data-id="${escapeHtml(p.person_id || "")}">
+          <div class="thumb" style="${p.photo ? `background-image:url('/media/${p.photo}')` : ""}">
+            <span class="live-flag"><i></i>在镜中</span>
+            ${p.photo ? "" : "尚无相片"}
+          </div>
+          <div class="meta">
+            <strong>${escapeHtml(p.name || p.person_id || "")}${isGuestId(p.person_id) || p.guest ? `<span class="badge guest">客人</span>` : ""}</strong>
+            <small>已待 ${escapeHtml(p.duration || "")}${p.start_ts ? " · " + escapeHtml(p.start_ts) : ""}</small>
+          </div>
+        </article>
+      `).join("")}</div>`;
+      for (const card of $("presentPanel").querySelectorAll(".present-card")) {
+        card.onclick = () => {
+          view = "people";
+          render();
+          openPerson(card.dataset.id);
+        };
+      }
+    }
+
+    function renderWatch() {
+      const report = watchReport || { settings: {}, state: {}, today: { sessions: [] } };
+      const s = report.settings || {};
+      const st = report.state || {};
+      const today = report.today || { sessions: [] };
+      const days = new Set(s.workdays || [1, 2, 3, 4, 5]);
+      const alarms = (today.alarms || today.sessions || []).filter((row) => row.alarm);
+      const ranks = today.by_person || [];
+      const q = $("q").value.trim().toLowerCase();
+      const sessions = (today.sessions || []).filter((row) => {
+        if (!q) return true;
+        const blob = (row.name || "") + " " + (row.names || []).join(" ") + " " + (row.start_ts || "") + " " + (row.duration || "");
+        return blob.toLowerCase().includes(q);
+      });
+      const alarmRows = alarms.filter((row) => {
+        if (!q) return true;
+        const blob = (row.name || "") + " " + (row.start_ts || "") + " " + (row.duration || "");
+        return blob.toLowerCase().includes(q);
+      });
+      const rankRows = ranks.filter((row) => !q || (row.name || "").toLowerCase().includes(q));
+      $("summary").textContent = s.hours_label
+        ? `${s.hours_label}${s.on_duty ? " · 检测中" : " · 现在下班不计"}`
+        : "离岗分析";
+      $("watchPanel").innerHTML = `
+        <section class="watch-card">
+          <h3>上班时间</h3>
+          <p class="hint" style="margin-top:0">上班时段里，谁离开镜头超过报警秒数就会记一笔。工位上还有别人时，也会记这个人自己的离岗。人物库里标成客人的人不计入离岗和报警。</p>
+          <div class="hours-row">
+            <label>上班 <input id="workStart" type="time" value="${escapeHtml(s.work_start || "09:00")}" /></label>
+            <label>下班 <input id="workEnd" type="time" value="${escapeHtml(s.work_end || "18:30")}" /></label>
+            <label>离岗报警（秒） <input id="awaySec" type="number" min="3" max="3600" step="1" value="${Number(s.away_s || 30)}" /></label>
+            <button type="button" id="saveHours">保存</button>
+          </div>
+          <div class="days">
+            ${WEEKDAYS.map(([id, name]) => `<button type="button" class="day ${days.has(id) ? "on" : ""}" data-day="${id}">周${name}</button>`).join("")}
+          </div>
+        </section>
+        <section class="watch-card">
+          <h3>今天 ${escapeHtml(today.date || "")}</h3>
+          <div class="stats">
+            <div class="stat"><span>当前</span><b>${escapeHtml(st.label || "—")}</b></div>
+            <div class="stat"><span>离岗次数</span><b>${today.away_count || 0}</b></div>
+            <div class="stat"><span>累计离开</span><b>${escapeHtml(today.away_label || "0 秒")}</b></div>
+            <div class="stat danger"><span>报警次数</span><b>${today.alarm_count || 0}</b></div>
+          </div>
+        </section>
+        <section class="watch-card">
+          <h3>报警统计</h3>
+          <div class="stats">
+            <div class="stat danger"><span>报警次数</span><b>${today.alarm_count || 0}</b></div>
+            <div class="stat"><span>累计报警</span><b>${escapeHtml(today.alarm_label || "0 秒")}</b></div>
+            <div class="stat"><span>最长一次</span><b>${escapeHtml(today.longest_label || "0 秒")}</b></div>
+            <div class="stat"><span>涉及人数</span><b>${today.people_count || 0}</b></div>
+          </div>
+          ${rankRows.length ? rankRows.map((row, i) => `
+            <div class="rank" data-id="${escapeHtml(row.person_id || "")}">
+              <span class="n">${i + 1}</span>
+              ${row.photo ? `<img src="/media/${row.photo}" alt="" />` : `<div class="ph">无图</div>`}
+              <div>
+                <strong>${escapeHtml(row.name || row.person_id || "")}</strong>
+                <small>${row.alarm_count} 次 · 最长 ${escapeHtml(row.longest_label || "")}${row.last_ts ? " · 最近 " + escapeHtml(row.last_ts) : ""}</small>
+              </div>
+              <strong>${escapeHtml(row.alarm_label || "")}</strong>
+            </div>
+          `).join("") : `<div class="empty" style="padding:28px 0">今天还没有达到报警时长的离岗。</div>`}
+        </section>
+        <section class="watch-card">
+          <h3>报警记录</h3>
+          ${alarmRows.length ? alarmRows.map((row) => `
+            <div class="session" style="margin-top:8px" data-id="${escapeHtml(row.person_id || "")}">
+              <div>
+                <strong>${escapeHtml(row.name || (row.names && row.names[0]) || "未识别")}</strong>
+                <small>${escapeHtml(row.start_ts || "")} → ${escapeHtml(row.end_ts || "")} · ${escapeHtml(row.duration || "")}</small>
+              </div>
+              <span class="tag alarm">${row.live ? "进行中" : "已报警"}</span>
+            </div>
+          `).join("") : `<div class="empty" style="padding:28px 0">离开镜头超过 ${Number(s.away_s || 30)} 秒才会记入报警。</div>`}
+        </section>
+        <section class="watch-card">
+          <h3>离岗记录</h3>
+          ${sessions.length ? sessions.map((row) => `
+            <div class="session" style="margin-top:8px">
+              <div>
+                <strong>${escapeHtml(row.name || (row.names && row.names[0]) || "未识别")}</strong>
+                <small>${escapeHtml(row.start_ts || "")} → ${escapeHtml(row.end_ts || "")} · ${escapeHtml(row.duration || "")}</small>
+              </div>
+              <span class="tag ${row.alarm ? "alarm" : (row.live ? "" : "off")}">${row.live ? "进行中" : (row.alarm ? "已报警" : "暂离")}</span>
+            </div>
+          `).join("") : `<div class="empty" style="padding:28px 0">上班时段内离开镜头超过报警秒数，会记在这里。</div>`}
+        </section>
+      `;
+      for (const btn of $("watchPanel").querySelectorAll(".day")) {
+        btn.onclick = () => btn.classList.toggle("on");
+      }
+      $("saveHours").onclick = saveHours;
+      for (const row of $("watchPanel").querySelectorAll(".rank, .session[data-id]")) {
+        row.style.cursor = "pointer";
+        row.onclick = () => {
+          const id = row.dataset.id;
+          if (!id) return;
+          view = "people";
+          render();
+          openPerson(id);
+        };
+      }
+    }
+
+    async function saveHours() {
+      try {
+        watchReport = await api("/api/watch", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            work_start: $("workStart").value || "09:00",
+            work_end: $("workEnd").value || "18:30",
+            workdays: selectedDays(),
+            away_s: Number($("awaySec").value) || 30,
+          }),
+        });
+        render();
+        toast("已保存上班时间");
+      } catch (err) {
+        toast(err.message);
       }
     }
 
@@ -277,10 +653,16 @@
       return t.a === p.id ? t.b_name : t.a_name;
     }
 
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-      }[c]));
+    function twinPct(t) {
+      const n = Number(t && t.sim);
+      if (!Number.isFinite(n) || n <= 0) return "";
+      return ` ${Math.round(n * 100)}%`;
+    }
+
+    function twinBadge(p) {
+      const t = (p.twins || [])[0];
+      if (!t) return "";
+      return `${escapeHtml(twinName(p))}${twinPct(t)}`;
     }
 
     function openPerson(id) {
@@ -288,8 +670,11 @@
       if (!selected) return;
       const p = selected;
       $("panel").innerHTML = `
-        <div class="row" style="justify-content:space-between;align-items:center">
-          <strong>${escapeHtml(p.name)}</strong>
+        <div class="panel-head">
+          <div>
+            <p class="kicker">人物档案</p>
+            <strong>${escapeHtml(p.name)}</strong>
+          </div>
           <button class="ghost" type="button" id="close">关闭</button>
         </div>
         ${p.photo_url ? `<img class="cover" src="${p.photo_url}?t=${encodeURIComponent(p.updated_at || "")}" alt="" />` : `<div class="cover" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">尚无相片，下次入镜会自动留底</div>`}
@@ -297,6 +682,11 @@
         <input id="name" type="text" value="${escapeHtml(p.name)}" />
         <label>备注</label>
         <textarea id="note" placeholder="例如：左边穿条纹衬衫">${escapeHtml(p.note || "")}</textarea>
+        <label class="check">
+          <input type="checkbox" id="guest" ${p.guest ? "checked" : ""} />
+          <span>客人（不计入离岗和报警统计）</span>
+        </label>
+        <p class="hint">客人仍会出现在「在镜中」和入镜日志里，只是离岗分析会跳过。</p>
         <div class="row">
           <button type="button" id="save">保存</button>
           <button class="ghost" type="button" id="refreshCover">设当前图为封面</button>
@@ -311,10 +701,11 @@
         </div>
         <label>这是重复档，并入</label>
         <div class="row">
-          <select id="mergeTo" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit">
+          <select id="mergeTo" style="flex:1">
             <option value="">选择已有的同一个人…</option>
             ${people.filter((x) => x.id !== p.id).sort((a, b) => (b.samples || 0) - (a.samples || 0)).map((x) => {
-              const mark = (p.twins || []).some((t) => t.a === x.id || t.b === x.id) ? "（疑似同一人）" : "";
+              const hit = (p.twins || []).find((t) => t.a === x.id || t.b === x.id);
+              const mark = hit ? `（疑似同一人${twinPct(hit)}）` : "";
               return `<option value="${x.id}">${escapeHtml(x.name)}${mark}</option>`;
             }).join("")}
           </select>
@@ -365,17 +756,23 @@
       }
     }
 
+    function isGuestId(id) {
+      const p = people.find((x) => x.id === id);
+      return !!(p && p.guest);
+    }
+
     async function savePerson() {
       if (!selected) return;
       const name = $("name").value.trim();
       const note = $("note").value;
+      const guest = $("guest").checked;
       const updated = await api("/api/people/" + selected.id, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, note }),
+        body: JSON.stringify({ name, note, guest }),
       });
       merge(updated);
-      toast("已保存 " + updated.name);
+      toast(updated.guest ? "已标为客人，离岗不再统计" : "已保存 " + updated.name);
       openPerson(updated.id);
     }
 
@@ -388,21 +785,39 @@
       toast("已删除");
     }
 
+    async function refreshPeople() {
+      people = await api("/api/people");
+      if (view === "log") {
+        visits = await api("/api/appear?limit=200");
+      }
+      if (view === "watch") {
+        watchReport = await api("/api/watch");
+      }
+      if (selected && !people.some((p) => p.id === selected.id)) {
+        selected = null;
+      }
+      const editingHours = view === "watch" && document.activeElement && $("watchPanel").contains(document.activeElement);
+      if (!editingHours) render();
+    }
+
     async function mergeInto() {
       if (!selected) return;
       const keepId = $("mergeTo").value;
       if (!keepId) return toast("先选要并入的人");
       const keep = people.find((p) => p.id === keepId);
       if (!confirm(`把「${selected.name}」并入「${keep ? keep.name : keepId}」，并删除当前这条？`)) return;
-      const updated = await api("/api/people/" + keepId + "/merge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: selected.id }),
-      });
-      people = people.filter((p) => p.id !== selected.id);
-      merge(updated);
-      openPerson(updated.id);
-      toast("已合并到 " + updated.name);
+      try {
+        const updated = await api("/api/people/" + keepId + "/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_id: selected.id }),
+        });
+        await refreshPeople();
+        toast("已合并到 " + updated.name);
+        openPerson(keepId);
+      } catch (err) {
+        toast(err.message);
+      }
     }
 
     async function uploadPhoto(ev) {
@@ -437,7 +852,13 @@
 
     $("btnNew").onclick = () => {
       $("panel").innerHTML = `
-        <div class="row" style="justify-content:space-between"><strong>登记新人</strong><button class="ghost" type="button" id="close">关闭</button></div>
+        <div class="panel-head">
+          <div>
+            <p class="kicker">人物库</p>
+            <strong>登记新人</strong>
+          </div>
+          <button class="ghost" type="button" id="close">关闭</button>
+        </div>
         <label>姓名</label>
         <input id="newName" type="text" placeholder="例如：小李" />
         <label>正面相片</label>
@@ -465,12 +886,24 @@
       };
     };
 
+    $("btnPeople").onclick = () => {
+      view = "people";
+      render();
+    };
     $("q").oninput = render;
+    $("btnPresent").onclick = async () => {
+      view = "present";
+      try { present = await api("/api/present"); } catch (err) { toast(err.message); }
+      render();
+    };
     $("btnLog").onclick = async () => {
-      view = view === "log" ? "people" : "log";
-      if (view === "log") {
-        try { visits = await api("/api/appear?limit=200"); } catch (err) { toast(err.message); }
-      }
+      view = "log";
+      try { visits = await api("/api/appear?limit=200"); } catch (err) { toast(err.message); }
+      render();
+    };
+    $("btnWatch").onclick = async () => {
+      view = "watch";
+      try { watchReport = await api("/api/watch"); } catch (err) { toast(err.message); }
       render();
     };
     $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeDrawer(); });
@@ -494,13 +927,62 @@
       paintGimbal(data);
       return data;
     }
+    let lastAlarm = false;
+    let audioCtx = null;
+    function beepAlarm() {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+        const beep = (freq, at) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = "square";
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.09, audioCtx.currentTime + at);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + at + 0.22);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + at);
+          osc.stop(audioCtx.currentTime + at + 0.24);
+        };
+        beep(880, 0);
+        beep(660, 0.28);
+        beep(880, 0.56);
+      } catch (_) {}
+    }
+    function paintStation(watch) {
+      const pill = $("stationPill");
+      const bar = $("alarmBar");
+      const w = watch || {};
+      const state = w.state || "waiting";
+      const alarm = !!(w.alarm && w.fresh && w.on_duty !== false);
+      pill.classList.remove("desk", "away", "alarm", "on", "off", "offduty");
+      if (state === "at_desk") pill.classList.add("desk", "on");
+      else if (state === "away") pill.classList.add("away");
+      else if (alarm) pill.classList.add("alarm");
+      else if (state === "off_hours") pill.classList.add("offduty", "off");
+      else pill.classList.add("off");
+      pill.innerHTML = `<i></i> ${w.label || "工位等待"}`;
+      document.body.classList.toggle("alarming", alarm);
+      bar.classList.toggle("show", alarm);
+      bar.hidden = !alarm;
+      $("alarmDetail").textContent = alarm ? (w.detail || `已离开工位 ${Math.floor(w.away_s || 0)} 秒`) : "";
+      if (alarm && !lastAlarm) beepAlarm();
+      lastAlarm = alarm;
+    }
     function paintDevice(data) {
       const pill = $("devicePill");
       const on = !!data.online;
       pill.classList.toggle("on", on);
       pill.classList.toggle("off", !on);
       pill.innerHTML = `<i></i> Pocket 3 ${on ? "在线" : "离线"}`;
-      $("deviceDetail").textContent = data.detail || "";
+      const extra = (data.watch && data.watch.detail) ? ` · ${data.watch.detail}` : "";
+      $("deviceDetail").textContent = (data.detail || "") + extra;
+      paintStation(data.watch);
+      if (data.present) present = data.present;
+      const n = present.fresh ? (present.count || 0) : 0;
+      $("btnPresent").textContent = n ? `在镜中 ${n}` : "在镜中";
+      if (view === "present") renderPresent();
     }
     function paintGimbal(data) {
       const wifi = data.backend === "wifi";
@@ -541,7 +1023,20 @@
     $("camFollow").onclick = () => sendGimbal({ mode: "follow", yaw: 0, pitch: 0 });
     $("camCenter").onclick = () => sendGimbal({ recenter: true });
     $("camStop").onclick = () => sendGimbal({ stop: true });
+    function setDockOpen(open) {
+      $("dock").classList.toggle("open", open);
+      $("btnCam").classList.toggle("active", open);
+      document.body.classList.toggle("dock-open", open);
+      if (!open) endHold();
+    }
+    $("btnCam").onclick = () => setDockOpen(!$("dock").classList.contains("open"));
+    $("btnCamClose").onclick = () => setDockOpen(false);
     window.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && $("dock").classList.contains("open")) {
+        setDockOpen(false);
+        return;
+      }
+      if (!$("dock").classList.contains("open")) return;
       const tag = (ev.target && ev.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
@@ -571,17 +1066,23 @@
       }
     }
     boot();
+    document.addEventListener("pointerdown", () => {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } catch (_) {}
+    }, { once: true });
     setInterval(async () => {
       try {
-        people = await api("/api/people");
-        if (view === "log") visits = await api("/api/appear?limit=200");
         paintDevice(await api("/api/status"));
         paintGimbal(await api("/api/gimbal"));
-        render();
-        if (selected) {
-          const fresh = people.find((p) => p.id === selected.id);
-          if (fresh) selected = fresh;
-        }
+      } catch (_) {}
+    }, 1500);
+    setInterval(async () => {
+      try {
+        const stayId = selected && selected.id;
+        await refreshPeople();
+        if (stayId && !people.some((p) => p.id === stayId)) closeDrawer();
       } catch (_) {}
     }, 4000);
   </script>

@@ -17,4 +17,8 @@ build/
 data/faces.json
 data/faces/
 data/appear.jsonl
+data/present.json
 data/gimbal.json
+data/station.json
+data/watch.json
+data/away.jsonl

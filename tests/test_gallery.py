@@ -27,6 +27,10 @@ def test_gallery_enroll_rename_photo_delete(tmp_path):
     renamed = gallery.rename(person["id"], "老李", note="左侧")
     assert renamed["name"] == "老李"
     assert renamed["note"] == "左侧"
+    assert renamed.get("guest") is False
+    guested = gallery.rename(person["id"], "老李", guest=True)
+    assert guested["guest"] is True
+    assert gallery.public(guested)["guest"] is True
 
     frame = np.zeros((120, 120, 3), dtype=np.uint8)
     frame[20:80, 30:90] = 180
@@ -68,6 +72,11 @@ def test_admin_list_and_rename(tmp_path):
     assert patched.status_code == 200
     assert patched.json()["name"] == "阿强"
     assert patched.json()["note"] == "蓝白条纹"
+    assert patched.json()["guest"] is False
+    guested = client.patch("/api/people/p001", json={"guest": True})
+    assert guested.status_code == 200
+    assert guested.json()["guest"] is True
+    assert guested.json()["name"] == "阿强"
     page = client.get("/")
     assert page.status_code == 200
     assert "人物库" in page.text
@@ -90,6 +99,32 @@ def test_gallery_merge_and_twins(tmp_path):
     assert (tmp_path / "faces" / a["id"] / "cover.jpg").exists() or list((tmp_path / "faces" / a["id"]).glob("*.jpg"))
     public = gallery.public_all(dup_threshold=0.3)
     assert public[0]["twins"] == []
+
+
+def test_similar_pairs_uses_median_not_one_lucky_template(tmp_path):
+    gallery = FaceGallery(tmp_path / "faces.json", tmp_path / "faces")
+    a = gallery.enroll(np.array([1.0, 0.0, 0.0], dtype=np.float32), name="人物A")
+    b = gallery.enroll(np.array([0.0, 1.0, 0.0], dtype=np.float32), name="人物H")
+    lucky = [0.70, 0.71, 0.0]
+    a["templates"] = [[0.99, 0.01, 0.0], [0.98, 0.02, 0.0], [0.97, 0.03, 0.0], lucky]
+    b["templates"] = [[0.01, 0.99, 0.0], [0.02, 0.98, 0.0], [0.03, 0.97, 0.0], lucky]
+    assert gallery.pair_score(a, b) < 0.40
+    assert gallery.similar_pairs(threshold=0.50) == []
+    twins = gallery.public_all()
+    assert twins[0]["twins"] == []
+    assert twins[1]["twins"] == []
+
+
+def test_similar_pairs_skips_people_who_shared_the_frame(tmp_path):
+    gallery = FaceGallery(tmp_path / "faces.json", tmp_path / "faces")
+    a = gallery.enroll(np.array([1.0, 0.0], dtype=np.float32), name="人物A")
+    b = gallery.enroll(np.array([0.99, 0.14], dtype=np.float32), name="人物H")
+    assert gallery.pair_score(a, b) >= 0.70
+    assert gallery.similar_pairs(threshold=0.70)
+    gallery.appear.tick({a["id"]: {"name": "人物A"}, b["id"]: {"name": "人物H"}}, now=1000.0)
+    gallery.appear.tick({a["id"]: {"name": "人物A"}, b["id"]: {"name": "人物H"}}, now=1010.0)
+    gallery.appear.tick({}, now=1020.0)
+    assert gallery.similar_pairs(threshold=0.70) == []
 
 
 def test_admin_merge(tmp_path):

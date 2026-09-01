@@ -178,6 +178,24 @@ def open_usb_or_camera(cfg: CaptureConfig) -> OpenCvCapture:
     raise RuntimeError("打不开 USB/摄像头。检查 Pocket 3 是否处于 Webcam 模式，以及 macOS 摄像头权限。")
 
 
+def try_open_pocket(
+    cfg: CaptureConfig,
+    current_label: str = "",
+    *,
+    force: bool = False,
+) -> OpenCvCapture | None:
+    """Pocket 3 刚开机出现在系统相机列表时，切过去。"""
+    if looks_like_pocket(current_label) and not force:
+        return None
+    if not pocket3_usb_present(ttl=2.0):
+        return None
+    try:
+        return open_usb_or_camera(cfg)
+    except RuntimeError:
+        logger.warning("检测到 Pocket 3 但暂时打不开")
+        return None
+
+
 def open_file(path: str) -> OpenCvCapture:
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
