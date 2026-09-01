@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PocketShow 人物库</title>
+  <style>
+    :root {
+      --bg: #101114;
+      --panel: #181a20;
+      --card: #1e2128;
+      --line: #2c303a;
+      --text: #eceef2;
+      --muted: #8b909c;
+      --green: #3dcc6f;
+      --danger: #ef5b5b;
+      --accent: #6aa4ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif; }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 20px 28px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
+      background: rgba(16,17,20,.92); backdrop-filter: blur(12px); z-index: 5;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .02em; }
+    h1 span { color: var(--green); }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .device-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 160px; }
+    .device-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 650;
+      border: 1px solid var(--line); background: var(--card);
+    }
+    .device-pill i {
+      width: 8px; height: 8px; border-radius: 50%; background: #6b7280;
+      box-shadow: 0 0 0 3px rgba(107,114,128,.18);
+    }
+    .device-pill.on { color: var(--green); border-color: #245c38; background: #14241a; }
+    .device-pill.on i { background: var(--green); box-shadow: 0 0 0 3px rgba(61,204,111,.22); }
+    .device-pill.off { color: var(--muted); }
+    .device-detail { color: var(--muted); font-size: 12px; max-width: 280px; text-align: right; line-height: 1.35; }
+    input[type="search"], input[type="text"], textarea {
+      background: var(--card); color: var(--text); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 12px; font: inherit;
+    }
+    input[type="search"] { min-width: 220px; }
+    textarea { width: 100%; min-height: 72px; resize: vertical; }
+    button, .btn {
+      border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer;
+      background: var(--green); color: #062; font-weight: 650;
+    }
+    button.ghost, .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+    button.danger { background: var(--danger); color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    main { padding: 24px 28px 80px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+      cursor: pointer; transition: transform .15s ease, border-color .15s ease;
+    }
+    .card:hover { transform: translateY(-2px); border-color: #414655; }
+    .thumb {
+      aspect-ratio: 3 / 4; background: #12141a center/cover no-repeat;
+      display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
+    }
+    .meta { padding: 12px 14px 14px; }
+    .meta strong { display: block; font-size: 16px; }
+    .meta small { color: var(--muted); }
+    .badge { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; background: #3a2a12; color: #f3c56b; font-size: 12px; }
+    .banner {
+      margin: 0 28px 16px; padding: 12px 16px; border-radius: 12px;
+      background: #2a2418; border: 1px solid #5a4a28; color: #f3c56b; font-size: 14px;
+    }
+    .banner button { margin-left: 8px; padding: 6px 10px; font-size: 13px; }
+    .empty { text-align: center; padding: 80px 20px; color: var(--muted); }
+    .drawer {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10;
+    }
+    .drawer.open { display: block; }
+    .panel {
+      position: absolute; right: 0; top: 0; height: 100%; width: min(460px, 100%);
+      background: var(--panel); border-left: 1px solid var(--line); overflow: auto; padding: 22px;
+    }
+    .cover { width: 100%; border-radius: 14px; background: #12141a; min-height: 280px; object-fit: cover; display: block; }
+    .row { display: flex; gap: 8px; margin: 12px 0; }
+    label { display: block; color: var(--muted); font-size: 12px; margin: 14px 0 6px; }
+    .snaps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .snaps img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; cursor: pointer; border: 2px solid transparent; }
+    .snaps img.cover { border-color: var(--green); }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #222; border: 1px solid var(--line); padding: 10px 16px; border-radius: 999px;
+      display: none; z-index: 20;
+    }
+    .drop {
+      border: 1px dashed var(--line); border-radius: 12px; padding: 16px; text-align: center;
+      color: var(--muted); margin-top: 8px;
+    }
+    .log { display: flex; flex-direction: column; gap: 8px; }
+    .visit {
+      display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center;
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    }
+    .visit img, .visit .ph {
+      width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #12141a;
+    }
+    .visit .ph { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+    .visit strong { display: block; }
+    .visit small { color: var(--muted); }
+    .tag { font-size: 12px; padding: 4px 8px; border-radius: 999px; background: #1d2a22; color: var(--green); white-space: nowrap; }
+    .tag.off { background: #22242a; color: var(--muted); }
+    button.active { box-shadow: 0 0 0 2px #1f5c38; }
+    .dock {
+      position: fixed; right: 20px; bottom: 20px; z-index: 8;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+      padding: 14px; width: 220px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    }
+    .dock h2 { margin: 0 0 8px; font-size: 14px; }
+    .pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0; }
+    .pad button { padding: 12px 0; font-size: 14px; }
+    .pad .ghost { background: var(--card); }
+    .dock .status { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 8px; }
+    .dock .status.warn { color: #f3c56b; }
+    .dock input[type="range"] { width: 100%; }
+    main { padding-bottom: 220px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PocketShow <span>人物库</span></h1>
+      <div class="sub" id="summary">正在读取名册…</div>
+    </div>
+    <div class="device-status" id="deviceStatus">
+      <span class="device-pill off" id="devicePill"><i></i> Pocket 3 离线</span>
+      <span class="device-detail" id="deviceDetail">正在检测设备…</span>
+    </div>
+    <div class="toolbar">
+      <input id="q" type="search" placeholder="搜索姓名 / 备注" />
+      <button type="button" class="ghost" id="btnLog">入镜日志</button>
+      <button type="button" id="btnNew">登记新人</button>
+    </div>
+  </header>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <div id="grid" class="grid"></div>
+    <div id="log" class="log" hidden></div>
+    <div id="empty" class="empty" hidden>还没有相片留底。打开跟拍后会自动抓脸，也可以点右上角「登记新人」上传照片。</div>
+  </main>
+  <div id="drawer" class="drawer">
+    <div class="panel" id="panel"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <aside class="dock" id="dock">
+    <h2>镜头</h2>
+    <div class="row" style="margin:0 0 8px">
+      <button type="button" class="ghost" id="camFollow">跟拍</button>
+      <button type="button" class="ghost" id="camCenter">回中</button>
+      <button type="button" class="ghost" id="camStop">停</button>
+    </div>
+    <div class="pad">
+      <span></span><button type="button" class="ghost" data-dir="up">上</button><span></span>
+      <button type="button" class="ghost" data-dir="left">左</button>
+      <button type="button" class="ghost" data-dir="stop">·</button>
+      <button type="button" class="ghost" data-dir="right">右</button>
+      <span></span><button type="button" class="ghost" data-dir="down">下</button><span></span>
+    </div>
+    <label style="margin-top:4px">速度</label>
+    <input id="camSpeed" type="range" min="15" max="80" value="40" />
+    <div class="status" id="camStatus">等待跟拍进程…</div>
+  </aside>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let people = [];
+    let selected = null;
+    let view = "people";
+    let visits = [];
+
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
+      return data;
+    }
+
+    function toast(msg) {
+      const el = $("toast");
+      el.textContent = msg;
+      el.style.display = "block";
+      setTimeout(() => { el.style.display = "none"; }, 2200);
+    }
+
+    function render() {
+      if (view === "log") {
+        $("grid").hidden = true;
+        $("empty").hidden = true;
+        $("banner").hidden = true;
+        $("log").hidden = false;
+        $("btnLog").classList.add("active");
+        $("q").placeholder = "筛选姓名";
+        $("summary").textContent = visits.length ? `最近 ${visits.length} 条入镜记录` : "暂无入镜记录";
+        const q = $("q").value.trim().toLowerCase();
+        const list = visits.filter((v) =>
+          !q || (v.name + " " + v.person_id).toLowerCase().includes(q)
+        );
+        if (!list.length) {
+          $("log").innerHTML = `<div class="empty" style="padding:40px 0">还没有入镜记录。打开跟拍后，识别到的人会按次记在这里。</div>`;
+          return;
+        }
+        $("log").innerHTML = list.map((v) => `
+          <article class="visit" data-id="${v.person_id}">
+            ${v.photo ? `<img src="/media/${v.photo}" alt="" />` : `<div class="ph">无图</div>`}
+            <div>
+              <strong>${escapeHtml(v.name)}</strong>
+              <small>${escapeHtml(v.start || "")}${v.end ? " → " + escapeHtml(v.end) : ""} · ${escapeHtml(v.duration || "")}${v.frames ? " · " + v.frames + " 帧" : ""}</small>
+            </div>
+            <span class="tag ${v.live ? "" : "off"}">${v.live ? "在镜中" : "已离镜"}</span>
+          </article>
+        `).join("");
+        for (const row of $("log").querySelectorAll(".visit")) {
+          row.style.cursor = "pointer";
+          row.onclick = () => {
+            view = "people";
+            $("btnLog").classList.remove("active");
+            $("log").hidden = true;
+            $("grid").hidden = false;
+            $("q").placeholder = "搜索姓名 / 备注";
+            render();
+            openPerson(row.dataset.id);
+          };
+        }
+        return;
+      }
+      $("log").hidden = true;
+      $("grid").hidden = false;
+      $("btnLog").classList.remove("active");
+      $("q").placeholder = "搜索姓名 / 备注";
+      const q = $("q").value.trim().toLowerCase();
+      const list = people.filter((p) =>
+        !q || (p.name + " " + (p.note || "") + " " + p.id).toLowerCase().includes(q)
+      );
+      $("summary").textContent = people.length ? `共 ${people.length} 人` : "空名册";
+      const dups = people.flatMap((p) => p.twins || []).filter((x, i, arr) => arr.findIndex((y) => y.a === x.a && y.b === x.b) === i);
+      const banner = $("banner");
+      if (dups.length) {
+        banner.hidden = false;
+        banner.innerHTML = `发现 ${dups.length} 组疑似同一人（侧脸/光线变化容易拆档）。打开卡片，把重复的一条「并入」另一个。`;
+      } else {
+        banner.hidden = true;
+        banner.textContent = "";
+      }
+      $("empty").hidden = list.length > 0;
+      $("grid").innerHTML = list.map((p) => `
+        <article class="card" data-id="${p.id}">
+          <div class="thumb" style="${p.photo_url ? `background-image:url('${p.photo_url}?t=${encodeURIComponent(p.updated_at || "")}')` : ""}">
+            ${p.photo_url ? "" : "尚无相片"}
+          </div>
+          <div class="meta">
+            <strong>${escapeHtml(p.name)}</strong>
+            <small>${p.samples} 次入镜${p.updated_at ? " · " + p.updated_at : ""}</small>
+            ${p.twins && p.twins.length ? `<div class="badge">疑似与 ${escapeHtml(twinName(p))} 为同一人</div>` : ""}
+          </div>
+        </article>
+      `).join("");
+      for (const card of $("grid").querySelectorAll(".card")) {
+        card.onclick = () => openPerson(card.dataset.id);
+      }
+    }
+
+    function twinName(p) {
+      const t = (p.twins || [])[0];
+      if (!t) return "";
+      return t.a === p.id ? t.b_name : t.a_name;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    function openPerson(id) {
+      selected = people.find((p) => p.id === id);
+      if (!selected) return;
+      const p = selected;
+      $("panel").innerHTML = `
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <strong>${escapeHtml(p.name)}</strong>
+          <button class="ghost" type="button" id="close">关闭</button>
+        </div>
+        ${p.photo_url ? `<img class="cover" src="${p.photo_url}?t=${encodeURIComponent(p.updated_at || "")}" alt="" />` : `<div class="cover" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">尚无相片，下次入镜会自动留底</div>`}
+        <label>姓名</label>
+        <input id="name" type="text" value="${escapeHtml(p.name)}" />
+        <label>备注</label>
+        <textarea id="note" placeholder="例如：左边穿条纹衬衫">${escapeHtml(p.note || "")}</textarea>
+        <div class="row">
+          <button type="button" id="save">保存</button>
+          <button class="ghost" type="button" id="refreshCover">设当前图为封面</button>
+        </div>
+        <label>相片留底</label>
+        <div class="snaps" id="snaps">
+          ${p.photos.map((ph) => `<img data-name="${escapeHtml(ph.name)}" class="${ph.cover ? "cover" : ""}" src="${ph.url}" title="${ph.mtime}${ph.cover ? " 封面" : ""}" />`).join("") || '<div class="hint">还没有底片</div>'}
+        </div>
+        <div class="drop">
+          上传相片（可更新封面）
+          <div style="margin-top:8px"><input id="file" type="file" accept="image/*" /></div>
+        </div>
+        <label>这是重复档，并入</label>
+        <div class="row">
+          <select id="mergeTo" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit">
+            <option value="">选择已有的同一个人…</option>
+            ${people.filter((x) => x.id !== p.id).sort((a, b) => (b.samples || 0) - (a.samples || 0)).map((x) => {
+              const mark = (p.twins || []).some((t) => t.a === x.id || t.b === x.id) ? "（疑似同一人）" : "";
+              return `<option value="${x.id}">${escapeHtml(x.name)}${mark}</option>`;
+            }).join("")}
+          </select>
+          <button type="button" id="doMerge">并入</button>
+        </div>
+        <p class="hint">跟拍里侧脸对不上时以前会新开一档。以后会优先并回已有人物；这里仍可手动合并。</p>
+        <label>入镜日志</label>
+        <div id="personLog" class="log"><div class="hint">读取中…</div></div>
+        <div class="row"><button class="danger" type="button" id="del">删除此人</button></div>
+      `;
+      $("drawer").classList.add("open");
+      $("close").onclick = closeDrawer;
+      $("save").onclick = savePerson;
+      $("del").onclick = deletePerson;
+      $("file").onchange = uploadPhoto;
+      $("doMerge").onclick = mergeInto;
+      $("refreshCover").onclick = () => toast("点下面一张底片即可设为封面");
+      for (const img of $("snaps").querySelectorAll("img")) {
+        img.onclick = () => setCover(img.dataset.name);
+      }
+      loadPersonLog(p.id);
+    }
+
+    function closeDrawer() {
+      $("drawer").classList.remove("open");
+      selected = null;
+    }
+
+    async function loadPersonLog(id) {
+      const box = $("personLog");
+      if (!box) return;
+      try {
+        const rows = await api("/api/appear?person_id=" + encodeURIComponent(id) + "&limit=40");
+        if (!rows.length) {
+          box.innerHTML = `<div class="hint">还没有入镜记录</div>`;
+          return;
+        }
+        box.innerHTML = rows.map((v) => `
+          <div class="visit" style="grid-template-columns:1fr auto">
+            <div>
+              <strong>${escapeHtml(v.live ? "在镜中" : "已离镜")}</strong>
+              <small>${escapeHtml(v.start || "")}${v.end ? " → " + escapeHtml(v.end) : ""} · ${escapeHtml(v.duration || "")}</small>
+            </div>
+          </div>
+        `).join("");
+      } catch (err) {
+        box.innerHTML = `<div class="hint">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function savePerson() {
+      if (!selected) return;
+      const name = $("name").value.trim();
+      const note = $("note").value;
+      const updated = await api("/api/people/" + selected.id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, note }),
+      });
+      merge(updated);
+      toast("已保存 " + updated.name);
+      openPerson(updated.id);
+    }
+
+    async function deletePerson() {
+      if (!selected || !confirm("删除 " + selected.name + " 以及全部相片？")) return;
+      await api("/api/people/" + selected.id, { method: "DELETE" });
+      people = people.filter((p) => p.id !== selected.id);
+      closeDrawer();
+      render();
+      toast("已删除");
+    }
+
+    async function mergeInto() {
+      if (!selected) return;
+      const keepId = $("mergeTo").value;
+      if (!keepId) return toast("先选要并入的人");
+      const keep = people.find((p) => p.id === keepId);
+      if (!confirm(`把「${selected.name}」并入「${keep ? keep.name : keepId}」，并删除当前这条？`)) return;
+      const updated = await api("/api/people/" + keepId + "/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: selected.id }),
+      });
+      people = people.filter((p) => p.id !== selected.id);
+      merge(updated);
+      openPerson(updated.id);
+      toast("已合并到 " + updated.name);
+    }
+
+    async function uploadPhoto(ev) {
+      const file = ev.target.files[0];
+      if (!file || !selected) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("as_cover", "true");
+      const updated = await api("/api/people/" + selected.id + "/photos", { method: "POST", body: fd });
+      merge(updated);
+      toast("已加入相片");
+      openPerson(updated.id);
+    }
+
+    async function setCover(name) {
+      const updated = await api("/api/people/" + selected.id + "/cover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: name }),
+      });
+      merge(updated);
+      openPerson(updated.id);
+      toast("已设为封面");
+    }
+
+    function merge(person) {
+      const i = people.findIndex((p) => p.id === person.id);
+      if (i >= 0) people[i] = person;
+      else people.unshift(person);
+      render();
+    }
+
+    $("btnNew").onclick = () => {
+      $("panel").innerHTML = `
+        <div class="row" style="justify-content:space-between"><strong>登记新人</strong><button class="ghost" type="button" id="close">关闭</button></div>
+        <label>姓名</label>
+        <input id="newName" type="text" placeholder="例如：小李" />
+        <label>正面相片</label>
+        <input id="newFile" type="file" accept="image/*" />
+        <p class="hint">照片里需要能看清脸，系统会提取特征并裁一张封面留底。</p>
+        <div class="row"><button type="button" id="create">登记</button></div>
+      `;
+      $("drawer").classList.add("open");
+      $("close").onclick = closeDrawer;
+      $("create").onclick = async () => {
+        const name = $("newName").value.trim();
+        const file = $("newFile").files[0];
+        if (!file) return toast("请选一张照片");
+        const fd = new FormData();
+        fd.append("file", file);
+        if (name) fd.append("name", name);
+        try {
+          const person = await api("/api/people", { method: "POST", body: fd });
+          merge(person);
+          openPerson(person.id);
+          toast("已登记 " + person.name);
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+    };
+
+    $("q").oninput = render;
+    $("btnLog").onclick = async () => {
+      view = view === "log" ? "people" : "log";
+      if (view === "log") {
+        try { visits = await api("/api/appear?limit=200"); } catch (err) { toast(err.message); }
+      }
+      render();
+    };
+    $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeDrawer(); });
+
+    let holdTimer = null;
+    let keys = { left: false, right: false, up: false, down: false };
+    const dirs = {
+      left: () => ({ yaw: -speed(), pitch: 0 }),
+      right: () => ({ yaw: speed(), pitch: 0 }),
+      up: () => ({ yaw: 0, pitch: speed() }),
+      down: () => ({ yaw: 0, pitch: -speed() }),
+      stop: () => ({ yaw: 0, pitch: 0, stop: true }),
+    };
+    function speed() { return Number($("camSpeed").value) / 100; }
+    async function sendGimbal(body) {
+      const data = await api("/api/gimbal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      paintGimbal(data);
+      return data;
+    }
+    function paintDevice(data) {
+      const pill = $("devicePill");
+      const on = !!data.online;
+      pill.classList.toggle("on", on);
+      pill.classList.toggle("off", !on);
+      pill.innerHTML = `<i></i> Pocket 3 ${on ? "在线" : "离线"}`;
+      $("deviceDetail").textContent = data.detail || "";
+    }
+    function paintGimbal(data) {
+      const wifi = data.backend === "wifi";
+      const link = !data.connected ? "跟拍未连接" : (wifi ? "WiFi 云台" : "USB 预览（电机未接）");
+      const mode = data.mode === "manual" ? (data.holding ? "手动" : "手动停") : "跟拍";
+      const motion = `${link} · ${mode}  yaw ${Number(data.applied_yaw || 0).toFixed(2)}  pitch ${Number(data.applied_pitch || 0).toFixed(2)}`;
+      $("camStatus").classList.toggle("warn", !wifi);
+      if (!data.connected) {
+        $("camStatus").textContent = motion + "。按钮指令会记下，但跟拍进程没在跑，镜头不会转。";
+      } else if (!wifi) {
+        $("camStatus").textContent = motion + "。指令已发出，Pocket 3 云台不会转：当前是 stub。请在相机上打开 WiFi 热点后再用 pocketshow --gimbal wifi。";
+      } else {
+        $("camStatus").textContent = motion;
+      }
+    }
+    function beginHold(dir) {
+      endHold();
+      const body = dirs[dir]();
+      const pulse = () => sendGimbal(body).catch((err) => toast(err.message));
+      pulse();
+      holdTimer = setInterval(pulse, 160);
+    }
+    function endHold() {
+      if (holdTimer) clearInterval(holdTimer);
+      holdTimer = null;
+      sendGimbal({ stop: true }).catch(() => {});
+    }
+    for (const btn of document.querySelectorAll(".pad [data-dir]")) {
+      const dir = btn.dataset.dir;
+      if (dir === "stop") {
+        btn.onclick = () => sendGimbal({ stop: true });
+        continue;
+      }
+      btn.addEventListener("pointerdown", (ev) => { ev.preventDefault(); btn.setPointerCapture(ev.pointerId); beginHold(dir); });
+      btn.addEventListener("pointerup", endHold);
+      btn.addEventListener("pointercancel", endHold);
+    }
+    $("camFollow").onclick = () => sendGimbal({ mode: "follow", yaw: 0, pitch: 0 });
+    $("camCenter").onclick = () => sendGimbal({ recenter: true });
+    $("camStop").onclick = () => sendGimbal({ stop: true });
+    window.addEventListener("keydown", (ev) => {
+      const tag = (ev.target && ev.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+      const dir = map[ev.key];
+      if (!dir || keys[dir]) return;
+      ev.preventDefault();
+      keys[dir] = true;
+      beginHold(dir);
+    });
+    window.addEventListener("keyup", (ev) => {
+      const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+      const dir = map[ev.key];
+      if (!dir) return;
+      keys[dir] = false;
+      endHold();
+    });
+    window.addEventListener("blur", endHold);
+
+    async function boot() {
+      try {
+        people = await api("/api/people");
+        render();
+        paintDevice(await api("/api/status"));
+        paintGimbal(await api("/api/gimbal"));
+      } catch (err) {
+        $("summary").textContent = "读取失败：" + err.message;
+      }
+    }
+    boot();
+    setInterval(async () => {
+      try {
+        people = await api("/api/people");
+        if (view === "log") visits = await api("/api/appear?limit=200");
+        paintDevice(await api("/api/status"));
+        paintGimbal(await api("/api/gimbal"));
+        render();
+        if (selected) {
+          const fresh = people.find((p) => p.id === selected.id);
+          if (fresh) selected = fresh;
+        }
+      } catch (_) {}
+    }, 4000);
+  </script>
+</body>
+</html>

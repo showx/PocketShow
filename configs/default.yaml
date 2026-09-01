@@ -1,0 +1,55 @@
+capture:
+  source: auto          # auto | usb | camera | file | wifi
+  device_index: 0
+  file: null
+  width: 1920
+  height: 1080
+  fps: 30
+
+detect:
+  model: yolo11n.pt
+  imgsz: 640
+  conf: 0.35
+  iou: 0.5
+  device: auto          # auto | mps | cpu | 0
+  tracker: bytetrack.yaml
+
+follow:
+  deadzone: 0.08
+  kp: 1.35
+  ki: 0.05
+  kd: 0.18
+  feedforward: 0.35
+  max_rate: 0.55
+  lost_hold_s: 0.8
+  lost_timeout_s: 2.5
+  target_area: 0.12     # 预留：bbox 面积占画面比，第一版不控变焦
+
+recognize:
+  enabled: true
+  match_threshold: 0.43   # 达到则认定为已有人物（A/B 约 0.37，不能再低）
+  soft_threshold: 0.38    # 弱匹配并入已有人物；同框第二张脸不再开新档
+  dup_threshold: 0.50     # 管理页「疑似同一人」提示
+  det_score: 0.7
+  enroll_score: 0.88
+  enroll_min_face: 36
+  enroll_confirm: 18
+  auto_enroll: true
+  gallery: data/faces.json
+  photos: data/faces
+
+gimbal:
+  backend: stub         # stub | wifi
+  send_hz: 30
+  command: data/gimbal.json
+
+wifi:
+  camera_ip: 192.168.2.1
+  camera_port: 9004
+  ssid: ""
+  password: ""
+  join: false
+  ble: false
+  ble_timeout_s: 15.0
+  video_width: 1280
+  video_height: 720

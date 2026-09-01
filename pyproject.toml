@@ -1,0 +1,40 @@
+[project]
+name = "pocketshow"
+version = "0.1.0"
+description = "Pocket 3 智能跟拍闭环：YOLO + ByteTrack + 云台控制"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ultralytics>=8.3.0",
+    "lap>=0.5.12",
+    "opencv-python>=4.10.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.7.0",
+    "pyyaml>=6.0.1",
+    "bleak>=0.22.0",
+    "pillow>=10.0.0",
+    "fastapi>=0.115.0",
+    "python-multipart>=0.0.12",
+    "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+pocketshow = "pocketshow.app:main"
+pocketshow-admin = "pocketshow.admin:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pocketshow = ["admin.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
