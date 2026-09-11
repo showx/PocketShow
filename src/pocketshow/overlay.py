@@ -58,6 +58,8 @@ def draw_overlay(
     locked_name: str | None = None,
     control_mode: str = "跟拍",
     watch_line: str = "",
+    title: str = "",
+    monitor: bool = False,
 ) -> np.ndarray:
     vis = frame.copy()
     h, w = vis.shape[:2]
@@ -65,8 +67,9 @@ def draw_overlay(
     dz_w, dz_h = int(w * deadzone), int(h * deadzone)
     cream = (210, 220, 232)
     mute = (150, 150, 150)
-    cv2.rectangle(vis, (cx - dz_w, cy - dz_h), (cx + dz_w, cy + dz_h), (70, 70, 70), 1)
-    cv2.drawMarker(vis, (cx, cy), cream, cv2.MARKER_CROSS, 14, 1)
+    if not monitor:
+        cv2.rectangle(vis, (cx - dz_w, cy - dz_h), (cx + dz_w, cy + dz_h), (70, 70, 70), 1)
+        cv2.drawMarker(vis, (cx, cy), cream, cv2.MARKER_CROSS, 14, 1)
 
     texts: list[tuple[str, tuple[int, int], tuple[int, int, int], int]] = []
     for track in tracks:
@@ -88,22 +91,25 @@ def draw_overlay(
                 name = f"{track.person_name} {track.face_score:.2f}"
         texts.append((name, (x1, max(8, y1 - 26)), color, 20))
 
-    if command.target_id is not None:
+    if not monitor and command.target_id is not None:
         tx = int((0.5 + command.error.ex) * w)
         ty = int((0.5 + command.error.ey) * h)
         cv2.arrowedLine(vis, (cx, cy), (tx, ty), cream, 2, tipLength=0.12)
 
-    status = "LOST" if command.lost else "LOCK"
-    who = locked_name or (str(locked_id) if locked_id is not None else "-")
-    hud = [
-        f"FPS {fps:.1f}",
-        f"{status} {who}",
-        f"err x={command.error.ex:+.3f} y={command.error.ey:+.3f} size={command.error.size_ratio:.2f}",
-        f"gimbal {gimbal_name} {control_mode} yaw={command.yaw_rate:+.2f} pitch={command.pitch_rate:+.2f}",
-    ]
-    if watch_line:
-        hud.append(watch_line)
-    hud.append("点选锁定  e登记人脸  n/p切换  c自动  q退出")
+    if monitor:
+        hud = [title or "监测", f"{len(tracks)} 人", watch_line] if watch_line else [title or "监测", f"{len(tracks)} 人"]
+    else:
+        status = "LOST" if command.lost else "LOCK"
+        who = locked_name or (str(locked_id) if locked_id is not None else "-")
+        hud = [
+            f"FPS {fps:.1f}",
+            f"{status} {who}",
+            f"err x={command.error.ex:+.3f} y={command.error.ey:+.3f} size={command.error.size_ratio:.2f}",
+            f"gimbal {gimbal_name} {control_mode} yaw={command.yaw_rate:+.2f} pitch={command.pitch_rate:+.2f}",
+        ]
+        if watch_line:
+            hud.append(watch_line)
+        hud.append("点选锁定  e登记人脸  n/p切换  c自动  q退出")
     plate = vis.copy()
     hud_h = 12 + 22 * len(hud) + 8
     hud_w = min(w - 12, 540)
@@ -116,9 +122,10 @@ def draw_overlay(
         y += 22
 
     vis = _draw_texts(vis, texts)
-    bar_x = w - 28
-    _draw_rate_bar(vis, bar_x, cy, command.yaw_rate, vertical=False)
-    _draw_rate_bar(vis, cx, 18, command.pitch_rate, vertical=True)
+    if not monitor:
+        bar_x = w - 28
+        _draw_rate_bar(vis, bar_x, cy, command.yaw_rate, vertical=False)
+        _draw_rate_bar(vis, cx, 18, command.pitch_rate, vertical=True)
     return vis
 
 

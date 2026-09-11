@@ -1,0 +1,8 @@
+# 广角工位：远处小人置信度低，阈值要比 Ultralytics 默认更松。
+tracker_type: bytetrack
+track_high_thresh: 0.15
+track_low_thresh: 0.05
+new_track_thresh: 0.15
+track_buffer: 90
+match_thresh: 0.7
+fuse_score: True

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import sys
 import webbrowser
@@ -11,13 +12,14 @@ import cv2
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from pocketshow.capture import looks_like_pocket, pocket3_usb_present
+from pocketshow.capture import CaptureStore, looks_like_pocket, pocket3_usb_present
 from pocketshow.config import Settings, load_settings
 from pocketshow.control import GimbalBus
 from pocketshow.gallery import FaceGallery, encode_jpeg
+from pocketshow.preview import PreviewHub, placeholder_jpeg
 from pocketshow.recognize import PersonRecognizer
 
 logger = logging.getLogger("pocketshow.admin")
@@ -59,6 +61,36 @@ class WatchPatch(BaseModel):
     away_s: float | None = None
 
 
+class CameraPatch(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    channel: int | None = None
+    stream: str | None = None
+    url: str | None = None
+    transport: str | None = None
+    monitor: bool | None = None
+
+
+class CapturePatch(BaseModel):
+    source: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    channel: int | None = None
+    stream: str | None = None
+    url: str | None = None
+    transport: str | None = None
+    camera_id: str | None = None
+    camera: CameraPatch | None = None
+    remove_camera_id: str | None = None
+    monitor_ids: list[str] | None = None
+
+
 def decode_image(data: bytes) -> np.ndarray:
     arr = np.frombuffer(data, np.uint8)
     image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -88,8 +120,11 @@ def device_status(bus: GimbalBus, *, usb: bool | None = None, watch: StationWatc
     device = str(info.get("device") or "")
     backend = str(info.get("backend") or "")
     pocket = bool(usb) or (follow and looks_like_pocket(device, capture))
+    rtsp = capture == "rtsp" or device.lower().startswith("rtsp")
     parts: list[str] = []
-    if usb:
+    if rtsp and follow:
+        parts.append(device or "局域网码流")
+    elif usb:
         parts.append("USB 已插入")
     elif capture == "wifi" and follow:
         parts.append("WiFi 画面")
@@ -99,17 +134,18 @@ def device_status(bus: GimbalBus, *, usb: bool | None = None, watch: StationWatc
         parts.append("跟拍未启动")
     if follow and backend == "wifi":
         parts.append("WiFi 云台")
-    elif follow:
+    elif follow and not rtsp:
         parts.append("电机未接")
-    if not pocket:
+    if not pocket and not rtsp:
         parts = ["跟拍在跑，但不是 Pocket 3"] if follow else ["未检测到 Pocket 3"]
     return {
-        "online": pocket,
+        "online": pocket or (rtsp and follow),
         "usb": bool(usb),
         "follow": follow,
         "gimbal": backend,
         "capture": capture,
         "device": device,
+        "kind": "rtsp" if rtsp else ("pocket" if pocket else "none"),
         "detail": " · ".join(parts),
         **info,
         "watch": watch.public() if watch is not None else {},
@@ -129,6 +165,9 @@ def create_app(settings: Settings) -> FastAPI:
         work_end=settings.watch.work_end,
         workdays=settings.watch.workdays,
     )
+    capture_store = CaptureStore(settings.capture, settings.rtsp)
+    preview = PreviewHub(settings.preview)
+    blank_jpeg = placeholder_jpeg()
     recognizer: PersonRecognizer | None = None
 
     def get_recognizer() -> PersonRecognizer:
@@ -191,9 +230,71 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/status")
     def get_status() -> dict:
+        capture_store.reload()
         data = device_status(bus, watch=watch)
         data["present"] = gallery.appear.present()
+        data["capture_settings"] = capture_store.public()
+        data["preview"] = preview.public()
         return data
+
+    @app.get("/api/preview.jpg")
+    def preview_jpeg() -> Response:
+        data = preview.read()
+        if data is None:
+            raise HTTPException(404, "跟拍未启动，还没有监测画面")
+        return Response(
+            content=data,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
+
+    @app.get("/api/preview")
+    async def preview_stream() -> StreamingResponse:
+        boundary = "frame"
+
+        async def frames():
+            while True:
+                data = preview.read() or blank_jpeg
+                yield (
+                    b"--" + boundary.encode() + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(data)).encode() + b"\r\n\r\n"
+                    + data
+                    + b"\r\n"
+                )
+                await asyncio.sleep(0.15)
+
+        return StreamingResponse(
+            frames(),
+            media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
+
+    @app.get("/api/capture")
+    def get_capture() -> dict:
+        capture_store.reload()
+        return capture_store.public()
+
+    @app.put("/api/capture")
+    def put_capture(body: CapturePatch) -> dict:
+        try:
+            return capture_store.save(
+                source=body.source,
+                host=body.host,
+                port=body.port,
+                username=body.username,
+                password=body.password,
+                channel=body.channel,
+                stream=body.stream,
+                url=body.url,
+                transport=body.transport,
+                camera_id=body.camera_id,
+                camera=body.camera.model_dump() if body.camera is not None else None,
+                remove_camera_id=body.remove_camera_id,
+                monitor_ids=body.monitor_ids,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     def watch_report() -> dict:
         gallery.maybe_reload()
@@ -330,8 +431,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    config_path = Path(args.config)
-    settings = load_settings(config_path if config_path.exists() else None)
+    settings = load_settings(args.config)
     app = create_app(settings)
     url = f"http://{args.host}:{args.port}"
     logger.info("人物库管理页 %s", url)

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pocketshow.config import RecognizeConfig
-from pocketshow.recognize import cosine_sim, face_in_person, should_count_toward_enroll
+from pocketshow.recognize import cosine_sim, face_in_person, map_xyxy, person_head_crop, should_count_toward_enroll, should_skip_liveness
 from pocketshow.types import Track
 
 
@@ -35,3 +35,23 @@ def test_should_not_enroll_near_existing():
     assert should_count_toward_enroll(cfg, best_sim=0.40, face_score=0.95, face_px=80) is False
     assert should_count_toward_enroll(cfg, best_sim=0.10, face_score=0.95, face_px=20) is False
     assert should_count_toward_enroll(cfg, best_sim=0.10, face_score=0.95, face_px=80) is True
+
+
+def test_skip_liveness_on_tiny_face():
+    cfg = RecognizeConfig()
+    assert should_skip_liveness(cfg, 18) is True
+    assert should_skip_liveness(cfg, 80) is False
+    assert should_skip_liveness(RecognizeConfig(liveness=False), 80) is True
+
+
+def test_head_crop_upscales_and_maps_back():
+    frame = np.zeros((200, 300, 3), dtype=np.uint8)
+    cropped = person_head_crop(frame, (20.0, 40.0, 50.0, 120.0), min_side=128)
+    assert cropped is not None
+    crop, origin, scale = cropped
+    assert origin == (15, 28)
+    assert scale > 1.0
+    assert min(crop.shape[0], crop.shape[1]) >= 128
+    mapped = map_xyxy((10.0, 8.0, 40.0, 48.0), origin, scale)
+    assert mapped[0] == 15 + 10.0 / scale
+    assert mapped[2] > mapped[0]

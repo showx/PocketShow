@@ -22,3 +22,7 @@ data/gimbal.json
 data/station.json
 data/watch.json
 data/away.jsonl
+data/capture.json
+data/preview.jpg
+data/preview.jpg.tmp
+configs/default.yaml

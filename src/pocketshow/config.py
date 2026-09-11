@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class CaptureConfig(BaseModel):
-    source: Literal["auto", "usb", "camera", "file", "wifi"] = "auto"
+    source: Literal["auto", "usb", "camera", "file", "wifi", "rtsp"] = "auto"
     device_index: int = 0
     file: str | None = None
     width: int = 1920
@@ -16,13 +16,46 @@ class CaptureConfig(BaseModel):
     fps: int = 30
 
 
+class RtspCamera(BaseModel):
+    id: str = ""
+    name: str = ""
+    host: str = ""
+    port: int = 554
+    username: str = "admin"
+    password: str = ""
+    channel: int = 1
+    stream: Literal["main", "sub", "third"] = "sub"
+    url: str = ""
+    transport: Literal["tcp", "udp"] = "tcp"
+    monitor: bool = True
+
+
+class RtspConfig(BaseModel):
+    camera_id: str = ""
+    cameras: list[RtspCamera] = Field(default_factory=list)
+    host: str = ""
+    port: int = 554
+    username: str = "admin"
+    password: str = ""
+    channel: int = 1
+    stream: Literal["main", "sub", "third"] = "sub"
+    url: str = ""
+    transport: Literal["tcp", "udp"] = "tcp"
+    settings: str = "data/capture.json"
+
+
 class DetectConfig(BaseModel):
     model: str = "yolo11n.pt"
-    imgsz: int = 640
-    conf: float = 0.35
+    imgsz: int = 1280
+    conf: float = 0.2
     iou: float = 0.5
     device: str = "auto"
     tracker: str = "bytetrack.yaml"
+    min_height: int = 12
+    far_pass: bool = True
+    far_ratio: float = 0.75
+    far_tiles: int = 2
+    tile_overlap: float = 0.2
 
 
 class RecognizeConfig(BaseModel):
@@ -30,7 +63,8 @@ class RecognizeConfig(BaseModel):
     match_threshold: float = 0.43
     soft_threshold: float = 0.38
     dup_threshold: float = 0.70
-    det_score: float = 0.7
+    det_score: float = 0.5
+    det_min_face: int = 12
     enroll_score: float = 0.88
     enroll_min_face: int = 36
     enroll_confirm: int = 18
@@ -38,6 +72,7 @@ class RecognizeConfig(BaseModel):
     liveness: bool = True
     liveness_threshold: float = 0.62
     liveness_confirm: int = 5
+    liveness_min_face: int = 40
     gallery: str = "data/faces.json"
     photos: str = "data/faces"
 
@@ -90,14 +125,28 @@ class Settings(BaseModel):
     recognize: RecognizeConfig = Field(default_factory=RecognizeConfig)
     gimbal: GimbalConfig = Field(default_factory=GimbalConfig)
     wifi: WifiConfig = Field(default_factory=WifiConfig)
+    rtsp: RtspConfig = Field(default_factory=RtspConfig)
     watch: WatchConfig = Field(default_factory=WatchConfig)
+    preview: str = "data/preview.jpg"
+
+
+def ensure_local_config(path: str | Path) -> Path:
+    """default.yaml 不进 git。缺失时从 default.example.yaml 复制一份到本地。"""
+    cfg_path = Path(path)
+    if cfg_path.exists():
+        return cfg_path
+    if cfg_path.name != "default.yaml":
+        raise FileNotFoundError(f"找不到配置文件: {cfg_path}")
+    example = cfg_path.with_name("default.example.yaml")
+    if not example.exists():
+        raise FileNotFoundError(f"找不到配置文件: {cfg_path}（也没有 {example.name}）")
+    cfg_path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+    return cfg_path
 
 
 def load_settings(path: str | Path | None) -> Settings:
     if path is None:
         return Settings()
-    cfg_path = Path(path)
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"找不到配置文件: {cfg_path}")
+    cfg_path = ensure_local_config(path)
     data = yaml.safe_load(cfg_path.read_text()) or {}
     return Settings.model_validate(data)

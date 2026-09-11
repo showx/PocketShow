@@ -53,18 +53,52 @@ Webcam 模式有可能与 WiFi 控制互斥：若云台无响应，把取流改�
 ```bash
 git clone https://github.com/showx/PocketShow.git
 cd PocketShow
+cp configs/default.example.yaml configs/default.yaml
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## 快速开始
+`configs/default.yaml` 只留在本机（含摄像机地址、密码等），不要提交。仓库里的模板是 [`configs/default.example.yaml`](configs/default.example.yaml)；若本地还没有 `default.yaml`，首次运行会自动复制一份。
 
-笔记本摄像头或 Pocket 3 USB，云台打到预览上（电机不转）：
+## 启动
+
+进入仓库后，**每个新开的终端都要先激活虚拟环境**，否则找不到 `pocketshow` 命令：
 
 ```bash
-pocketshow --config configs/default.yaml --gimbal stub
+cd PocketShow
+source .venv/bin/activate
 ```
+
+日常用两路：一路网页后台，一路拉流监测。开两个终端，都先 `source .venv/bin/activate`。
+
+**终端 1 — 管理页**
+
+```bash
+pocketshow-admin
+```
+
+浏览器打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。`--no-browser` 可以不自动弹窗。
+
+**终端 2 — 监测 / 跟拍**
+
+局域网海康监控（管理页「离岗分析」里勾选要监测的通道）：
+
+```bash
+pocketshow --source rtsp --gimbal stub
+```
+
+笔记本摄像头或 Pocket 3 USB（云台只画在预览上，电机不转）：
+
+```bash
+pocketshow --gimbal stub
+```
+
+管理页「离岗分析」最上栏会同步桌面窗口那份画布。退出：监测窗口按 `q`，两个终端都可以 `Ctrl+C`。
+
+若提示 `command not found: pocketshow`，多半是没激活 `.venv`，或还没做过上面的安装。
+
+## 快速开始
 
 文件回放：
 
@@ -117,12 +151,13 @@ pocketshow-admin
 
 ## 配置
 
-主配置见 [`configs/default.yaml`](configs/default.yaml)。跟拍不是把人死锁在画面中心：`deadzone` 内不推云台；ByteTrack 速度做前馈；短暂遮挡衰减最后速度，超时才重选。
+主配置模板见 [`configs/default.example.yaml`](configs/default.example.yaml)，本地改 `configs/default.yaml`。跟拍不是把人死锁在画面中心：`deadzone` 内不推云台；ByteTrack 速度做前馈；短暂遮挡衰减最后速度，超时才重选。
 
 | 段 | 关键项 |
 |----|--------|
-| `capture` | `source`（`auto` / `usb` / `file` / `wifi`）、分辨率、帧率 |
-| `detect` | YOLO 权重、`conf`、设备（`auto` / `mps` / `cpu`） |
+| `capture` | `source`（`auto` / `usb` / `file` / `wifi` / `rtsp`）、分辨率、帧率 |
+| `rtsp` | 海康 NVR / 摄像机列表、码流、本机 `data/capture.json` |
+| `detect` | YOLO 权重、`imgsz`（广角建议 1280）、`conf`、远处切片 `far_pass`、设备（`auto` / `mps` / `cpu`） |
 | `follow` | `deadzone`、PID、`feedforward`、丢失保持 / 超时 |
 | `recognize` | 匹配阈值、自动登记、活体开关、人物库路径 |
 | `gimbal` | `stub` 或 `wifi` |
@@ -132,8 +167,10 @@ pocketshow-admin
 命令行覆盖配置，常用参数：
 
 ```text
-pocketshow [--config PATH] [--source auto|usb|camera|file|wifi]
+pocketshow [--config PATH] [--source auto|usb|camera|file|wifi|rtsp]
            [--file PATH] [--device-index N]
+           [--stream main|sub|third] [--rtsp-host HOST] [--rtsp-channel N]
+           [--rtsp-camera ID]
            [--gimbal stub|wifi] [--ssid SSID] [--password PASS]
            [--ble] [--join-wifi] [--no-preview] [-v]
 ```
@@ -177,7 +214,7 @@ src/pocketshow/
 
 - USB Webcam 与 WiFi 云台可能互斥，无响应时改 `--source wifi`
 - 人脸库与日志默认写在仓库下的 `data/`，请勿提交个人相片
-- 活体与识别都是启发式阈值，强光、侧脸、遮挡会误判
+- 活体与识别都是启发式阈值，强光、侧脸、遮挡会误判；广角里后脑勺/口罩仍然认不出名字，但应先检出人框
 
 ## 开发
 

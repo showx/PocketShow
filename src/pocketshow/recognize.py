@@ -35,13 +35,61 @@ def should_count_toward_enroll(cfg: RecognizeConfig, best_sim: float, face_score
     return face_px >= cfg.enroll_min_face
 
 
+def should_skip_liveness(cfg: RecognizeConfig, face_px: float) -> bool:
+    """远处小脸做不了活体，拦掉反而认不出人。"""
+    if not cfg.liveness:
+        return True
+    return face_px < cfg.liveness_min_face
+
+
 def face_in_person(face_xyxy: tuple[float, float, float, float], person: Track) -> bool:
     fx1, fy1, fx2, fy2 = face_xyxy
     fcx, fcy = (fx1 + fx2) * 0.5, (fy1 + fy2) * 0.5
     px1, py1, px2, py2 = person.bbox_xyxy
     if not (px1 <= fcx <= px2 and py1 <= fcy <= py2):
         return False
-    return fcy <= py1 + 0.55 * (py2 - py1)
+    return fcy <= py1 + 0.70 * (py2 - py1)
+
+
+def person_head_crop(
+    frame: np.ndarray,
+    person_xyxy: tuple[float, float, float, float],
+    *,
+    head_ratio: float = 0.58,
+    pad: float = 0.14,
+    min_side: int = 128,
+) -> tuple[np.ndarray, tuple[int, int], float] | None:
+    """裁人体上半并放大，让远处小脸够 YuNet 检。"""
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = person_xyxy
+    bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+    rx1 = max(0, int(x1 - bw * pad))
+    ry1 = max(0, int(y1 - bh * pad))
+    rx2 = min(w, int(x2 + bw * pad))
+    ry2 = min(h, int(y1 + bh * head_ratio + bh * pad))
+    if rx2 - rx1 < 8 or ry2 - ry1 < 8:
+        return None
+    crop = frame[ry1:ry2, rx1:rx2]
+    if crop.size == 0:
+        return None
+    ch, cw = crop.shape[:2]
+    scale = 1.0
+    shortest = min(ch, cw)
+    if shortest < min_side:
+        scale = min_side / max(shortest, 1)
+        crop = cv2.resize(crop, (max(1, int(round(cw * scale))), max(1, int(round(ch * scale)))), interpolation=cv2.INTER_CUBIC)
+    return crop, (rx1, ry1), scale
+
+
+def map_xyxy(
+    xyxy: tuple[float, float, float, float],
+    origin: tuple[int, int],
+    scale: float,
+) -> tuple[float, float, float, float]:
+    ox, oy = origin
+    scale = scale if scale > 1e-6 else 1.0
+    x1, y1, x2, y2 = xyxy
+    return (x1 / scale + ox, y1 / scale + oy, x2 / scale + ox, y2 / scale + oy)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -107,9 +155,8 @@ class PersonRecognizer:
 
     def detect_faces(self, frame: np.ndarray) -> list[dict]:
         h, w = frame.shape[:2]
-        if self._input_size != (w, h):
-            self.detector.setInputSize((w, h))
-            self._input_size = (w, h)
+        self.detector.setInputSize((w, h))
+        self._input_size = (w, h)
         _retval, faces = self.detector.detect(frame)
         if faces is None:
             return []
@@ -117,7 +164,7 @@ class PersonRecognizer:
         for row in faces:
             x, y, bw, bh = (float(v) for v in row[:4])
             score = float(row[-1])
-            if score < self.cfg.det_score or bw < 24 or bh < 24:
+            if score < self.cfg.det_score or bw < self.cfg.det_min_face or bh < self.cfg.det_min_face:
                 continue
             xyxy = (x, y, x + bw, y + bh)
             feat = self._embed(frame, row)
@@ -125,6 +172,23 @@ class PersonRecognizer:
                 continue
             out.append({"xyxy": xyxy, "score": score, "embedding": feat, "raw": row})
         return out
+
+    def _detect_face_in_track(self, frame: np.ndarray, track: Track) -> dict | None:
+        cropped = person_head_crop(frame, track.bbox_xyxy)
+        if cropped is None:
+            return None
+        crop, origin, scale = cropped
+        best, best_area = None, -1.0
+        for face in self.detect_faces(crop):
+            mapped = dict(face)
+            mapped["xyxy"] = map_xyxy(face["xyxy"], origin, scale)
+            if not face_in_person(mapped["xyxy"], track):
+                continue
+            fx1, fy1, fx2, fy2 = mapped["xyxy"]
+            area = (fx2 - fx1) * (fy2 - fy1) * mapped["score"]
+            if area > best_area:
+                best, best_area = mapped, area
+        return best
 
     def _embed(self, frame: np.ndarray, face_row: np.ndarray) -> np.ndarray | None:
         try:
@@ -200,6 +264,12 @@ class PersonRecognizer:
         self.gallery.maybe_save_live(person, frame, face["xyxy"])
 
     def _update_live(self, track: Track, face: dict, frame: np.ndarray) -> bool:
+        fx1, fy1, fx2, fy2 = face["xyxy"]
+        face_px = min(fx2 - fx1, fy2 - fy1)
+        if should_skip_liveness(self.cfg, face_px):
+            track.live = True
+            track.live_score = 1.0
+            return True
         if self.liveness is None:
             track.live = True
             track.live_score = 1.0
@@ -220,13 +290,38 @@ class PersonRecognizer:
             track.live = None
         return track.live is True
 
-    def apply(self, frame: np.ndarray, tracks: list[Track]) -> list[Track]:
+    def present_from_tracks(self, tracks: list[Track]) -> dict[str, dict]:
+        present: dict[str, dict] = {}
+        for track in tracks:
+            if not track.person_id:
+                continue
+            person = self.gallery.find(track.person_id)
+            present[track.person_id] = {
+                "name": track.person_name or (person.get("name") if person else track.person_id),
+                "photo": (person.get("photo") if person else "") or "",
+                "guest": bool(person.get("guest")) if person else False,
+            }
+        return present
+
+    def flush_appear(self, groups: list[list[Track]]) -> None:
+        present: dict[str, dict] = {}
+        alive: set[int] = set()
+        for tracks in groups:
+            alive.update(track.id for track in tracks)
+            present.update(self.present_from_tracks(tracks))
+        self._id_memory = {key: value for key, value in self._id_memory.items() if key in alive}
+        self._pending_enroll = {key: value for key, value in self._pending_enroll.items() if key in alive}
+        self._live_hits = {key: value for key, value in self._live_hits.items() if key in alive}
+        self.gallery.appear.tick(present)
+
+    def apply(self, frame: np.ndarray, tracks: list[Track], *, tick_appear: bool = True) -> list[Track]:
         self.gallery.maybe_reload()
         if not tracks:
-            self._id_memory.clear()
-            self._pending_enroll.clear()
-            self._live_hits.clear()
-            self.gallery.appear.tick({})
+            if tick_appear:
+                self._id_memory.clear()
+                self._pending_enroll.clear()
+                self._live_hits.clear()
+                self.gallery.appear.tick({})
             return tracks
         faces = self.detect_faces(frame)
         used_faces: set[int] = set()
@@ -248,6 +343,16 @@ class PersonRecognizer:
             used_faces.add(best_i)
             track.face_bbox = faces[best_i]["xyxy"]
             paired.append((track, faces[best_i]))
+        paired_ids = {track.id for track, _ in paired}
+        for track in tracks:
+            if track.id in paired_ids:
+                continue
+            face = self._detect_face_in_track(frame, track)
+            if face is None:
+                continue
+            track.face_bbox = face["xyxy"]
+            paired.append((track, face))
+            paired_ids.add(track.id)
         paired.sort(
             key=lambda item: (item[1]["xyxy"][2] - item[1]["xyxy"][0]) * (item[1]["xyxy"][3] - item[1]["xyxy"][1]),
             reverse=True,
@@ -321,25 +426,20 @@ class PersonRecognizer:
             track.person_name = name
             track.face_score = score
             used_people.add(pid)
-        self._id_memory = {k: v for k, v in self._id_memory.items() if k in alive}
-        self._pending_enroll = {k: v for k, v in self._pending_enroll.items() if k in alive}
-        self._live_hits = {k: v for k, v in self._live_hits.items() if k in alive}
-        present: dict[str, dict] = {}
-        for track in tracks:
-            if not track.person_id:
-                continue
-            person = self.gallery.find(track.person_id)
-            present[track.person_id] = {
-                "name": track.person_name or (person.get("name") if person else track.person_id),
-                "photo": (person.get("photo") if person else "") or "",
-                "guest": bool(person.get("guest")) if person else False,
-            }
-        self.gallery.appear.tick(present)
+        if tick_appear:
+            self._id_memory = {k: v for k, v in self._id_memory.items() if k in alive}
+            self._pending_enroll = {k: v for k, v in self._pending_enroll.items() if k in alive}
+            self._live_hits = {k: v for k, v in self._live_hits.items() if k in alive}
+            self.gallery.appear.tick(self.present_from_tracks(tracks))
         return tracks
 
     def enroll_track(self, frame: np.ndarray, track: Track, name: str | None = None) -> str | None:
         faces = self.detect_faces(frame)
         candidates = [f for f in faces if face_in_person(f["xyxy"], track)]
+        if not candidates:
+            cropped = self._detect_face_in_track(frame, track)
+            if cropped is not None:
+                candidates = [cropped]
         if not candidates:
             logger.warning("当前目标没有可用人脸，无法登记")
             return None

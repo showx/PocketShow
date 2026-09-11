@@ -224,7 +224,28 @@
     .dock .status.warn { color: var(--warn); }
     .dock input[type="range"] { width: 100%; accent-color: var(--cream); }
     body.dock-open main { padding-bottom: 240px; }
-    .watch-panel { display: flex; flex-direction: column; gap: 14px; max-width: 920px; }
+    .watch-panel { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
+    .live-stage {
+      position: relative;
+      margin-top: 4px;
+      background: #0a0a0c;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+    }
+    .live-stage img {
+      display: block; width: 100%; height: 100%;
+      object-fit: contain; background: #0a0a0c;
+    }
+    .live-stage img.off { opacity: .28; }
+    .live-empty {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      margin: 0; padding: 24px;
+      color: var(--muted); font-size: 13px; text-align: center; line-height: 1.6;
+      pointer-events: none;
+    }
     .watch-card {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px;
     }
@@ -237,6 +258,22 @@
     .hours-row label { margin: 0; }
     .hours-row input[type="time"] { width: 140px; }
     .hours-row input[type="number"] { width: 110px; }
+    .hours-row input[type="text"], .hours-row input[type="password"], .hours-row select { min-width: 140px; }
+    .hours-row input.host { min-width: 180px; }
+    .stream-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+    .cam-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
+    .cam-item {
+      text-align: left; border: 1px solid var(--line); background: rgba(255,255,255,.02);
+      color: var(--text); font-weight: 500; padding: 10px 12px;
+    }
+    .cam-item strong { display: block; font-size: 14px; }
+    .cam-item small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; font-weight: 400; }
+    .cam-item.on { border-color: var(--cream); background: rgba(236,231,220,.08); }
+    .cam-item.add { color: var(--muted); border-style: dashed; }
+    .cam-item { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
+    .cam-item .pick { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+    .cam-item .pick input { accent-color: var(--cream); }
+    .cam-item.watching { border-color: rgba(143,191,154,.35); }
     .days { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
     .day {
       border: 1px solid var(--line); background: transparent; color: var(--muted);
@@ -324,6 +361,16 @@
     <div id="grid" class="grid"></div>
     <div id="log" class="log" hidden></div>
     <div id="presentPanel" hidden></div>
+    <div id="watchLive" class="watch-panel" hidden>
+      <section class="watch-card">
+        <h3>监测画面</h3>
+        <p class="hint" style="margin-top:0">和桌面 PocketShow 窗口同一份宫格。跟拍没开时这里是空的。</p>
+        <div class="live-stage" id="liveStage">
+          <img id="livePreview" alt="监测画布" />
+          <p class="live-empty" id="liveEmpty">打开跟拍后，这里会显示监测画布。</p>
+        </div>
+      </section>
+    </div>
     <div id="watchPanel" class="watch-panel" hidden></div>
     <div id="empty" class="empty" hidden>还没有相片留底。打开跟拍后会自动抓脸，也可以点「登记新人」上传照片。</div>
   </main>
@@ -359,6 +406,7 @@
     let view = "people";
     let visits = [];
     let watchReport = null;
+    let captureSettings = null;
     let present = { people: [], count: 0, fresh: false };
     const WEEKDAYS = [[1, "一"], [2, "二"], [3, "三"], [4, "四"], [5, "五"], [6, "六"], [7, "日"]];
 
@@ -382,9 +430,9 @@
         people: ["grid", "banner", "empty"],
         log: ["log"],
         present: ["presentPanel"],
-        watch: ["watchPanel"],
+        watch: ["watchLive", "watchPanel"],
       };
-      for (const id of ["grid", "banner", "empty", "log", "presentPanel", "watchPanel"]) {
+      for (const id of ["grid", "banner", "empty", "log", "presentPanel", "watchLive", "watchPanel"]) {
         $(id).hidden = !(panels[name] || []).includes(id);
       }
       $("btnPeople").classList.toggle("active", name === "people");
@@ -521,8 +569,16 @@
       }
     }
 
+    function selectedStream() {
+      const on = document.querySelector("#streamPick .day.on");
+      return (on && on.dataset.stream) || "sub";
+    }
+
     function renderWatch() {
       const report = watchReport || { settings: {}, state: {}, today: { sessions: [] } };
+      const cap = captureSettings || { source: "auto", stream: "sub", port: 554, channel: 1, username: "admin", cameras: [] };
+      const selectedCam = (cap.cameras || []).find((c) => c.id === cap.camera_id) || (cap.cameras || [])[0] || cap;
+      const capName = selectedCam.name || "";
       const s = report.settings || {};
       const st = report.state || {};
       const today = report.today || { sessions: [] };
@@ -545,6 +601,54 @@
         ? `${s.hours_label}${s.on_duty ? " · 检测中" : " · 现在下班不计"}`
         : "离岗分析";
       $("watchPanel").innerHTML = `
+        <section class="watch-card">
+          <h3>摄像机</h3>
+          <p class="hint" style="margin-top:0">勾选「监测」的通道会同时拉流。点名称只改下面的编辑项，不会单独切路。</p>
+          <div class="hours-row">
+            <label>视频源
+              <select id="capSource">
+                <option value="auto" ${cap.source === "auto" ? "selected" : ""}>Pocket 自动</option>
+                <option value="usb" ${cap.source === "usb" ? "selected" : ""}>USB / 摄像头</option>
+                <option value="rtsp" ${cap.source === "rtsp" ? "selected" : ""}>局域网监控</option>
+              </select>
+            </label>
+          </div>
+          <div id="rtspFields" ${cap.source === "rtsp" ? "" : "hidden"}>
+            <div class="cam-list" id="camList">
+              ${(cap.cameras || []).map((cam) => `
+                <button type="button" class="cam-item ${cam.id === cap.camera_id ? "on" : ""} ${cam.monitor ? "watching" : ""}" data-id="${escapeHtml(cam.id)}">
+                  <label class="pick" data-id="${escapeHtml(cam.id)}">
+                    <input type="checkbox" ${cam.monitor ? "checked" : ""} />监测
+                  </label>
+                  <span>
+                    <strong>${escapeHtml(cam.name || cam.host || cam.id)}</strong>
+                    <small>${escapeHtml(cam.host || "未填 IP")} · 通道 ${cam.channel || 1} · ${escapeHtml(cam.stream_label || "")}</small>
+                  </span>
+                </button>
+              `).join("")}
+              <button type="button" class="cam-item add" id="addCamera">+ 添加摄像机</button>
+            </div>
+            <div class="hours-row" style="margin-top:12px">
+              <input id="capCamId" type="hidden" value="${escapeHtml(cap.camera_id || "")}" />
+              <label>名称 <input id="capName" type="text" value="${escapeHtml(capName)}" placeholder="工位区 / 门口" /></label>
+              <label>摄像机 / NVR IP <input id="capHost" class="host" type="text" value="${escapeHtml(cap.host || "")}" placeholder="192.168.0.177" /></label>
+              <label>端口 <input id="capPort" type="number" min="1" max="65535" value="${Number(cap.port || 554)}" /></label>
+              <label>通道 <input id="capChannel" type="number" min="1" max="64" value="${Number(cap.channel || 1)}" /></label>
+              <label>账号 <input id="capUser" type="text" value="${escapeHtml(cap.username || "admin")}" /></label>
+              <label>密码 <input id="capPass" type="password" value="" placeholder="${cap.has_password ? "已保存，留空不改" : "摄像机密码"}" autocomplete="off" /></label>
+            </div>
+            <p class="hint" style="margin:12px 0 0">码流 ${escapeHtml(cap.stream_label || "")}${cap.url ? " · " + escapeHtml(cap.url) : ""}</p>
+            <div class="stream-pick" id="streamPick">
+              ${[["main", "主码流"], ["sub", "子码流（推荐）"], ["third", "第三码流"]].map(([id, name]) =>
+                `<button type="button" class="day ${cap.stream === id ? "on" : ""}" data-stream="${id}">${name}</button>`
+              ).join("")}
+            </div>
+          </div>
+          <div class="hours-row" style="margin-top:14px">
+            <button type="button" id="saveCapture">保存这路</button>
+            <button type="button" class="ghost" id="removeCamera" ${(cap.cameras || []).length ? "" : "hidden"}>删除这路</button>
+          </div>
+        </section>
         <section class="watch-card">
           <h3>上班时间</h3>
           <p class="hint" style="margin-top:0">上班时段里，谁离开镜头超过报警秒数就会记一笔。工位上还有别人时，也会记这个人自己的离岗。人物库里标成客人的人不计入离岗和报警。</p>
@@ -612,10 +716,38 @@
           `).join("") : `<div class="empty" style="padding:28px 0">上班时段内离开镜头超过报警秒数，会记在这里。</div>`}
         </section>
       `;
-      for (const btn of $("watchPanel").querySelectorAll(".day")) {
+      for (const btn of $("watchPanel").querySelectorAll(".days .day")) {
         btn.onclick = () => btn.classList.toggle("on");
       }
+      const sourceSel = $("capSource");
+      if (sourceSel) {
+        sourceSel.onchange = () => {
+          $("rtspFields").hidden = sourceSel.value !== "rtsp";
+        };
+      }
+      for (const btn of $("watchPanel").querySelectorAll("#streamPick .day")) {
+        btn.onclick = () => {
+          for (const other of $("watchPanel").querySelectorAll("#streamPick .day")) {
+            other.classList.toggle("on", other === btn);
+          }
+        };
+      }
       $("saveHours").onclick = saveHours;
+      $("saveCapture").onclick = saveCapture;
+      const addBtn = $("addCamera");
+      if (addBtn) addBtn.onclick = beginAddCamera;
+      const removeBtn = $("removeCamera");
+      if (removeBtn) removeBtn.onclick = removeCamera;
+      for (const btn of $("watchPanel").querySelectorAll(".cam-item[data-id]")) {
+        btn.onclick = () => selectCamera(btn.dataset.id);
+      }
+      for (const box of $("watchPanel").querySelectorAll(".cam-item .pick")) {
+        box.onclick = (ev) => ev.stopPropagation();
+        const check = box.querySelector("input");
+        if (check) {
+          check.onchange = () => toggleMonitor(box.dataset.id, check.checked);
+        }
+      }
       for (const row of $("watchPanel").querySelectorAll(".rank, .session[data-id]")) {
         row.style.cursor = "pointer";
         row.onclick = () => {
@@ -625,6 +757,105 @@
           render();
           openPerson(id);
         };
+      }
+    }
+
+    async function selectCamera(id) {
+      try {
+        captureSettings = await api("/api/capture", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "rtsp", camera_id: id }),
+        });
+        $("capSource").value = "rtsp";
+        render();
+        const cam = (captureSettings.cameras || []).find((c) => c.id === id);
+        toast(`正在编辑 ${cam ? cam.name : id}`);
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    async function toggleMonitor(id, on) {
+      const cameras = captureSettings.cameras || [];
+      const monitorIds = cameras.filter((cam) => (cam.id === id ? on : cam.monitor)).map((cam) => cam.id);
+      try {
+        captureSettings = await api("/api/capture", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "rtsp", monitor_ids: monitorIds }),
+        });
+        render();
+        const names = (captureSettings.cameras || []).filter((cam) => cam.monitor).map((cam) => cam.name || cam.id);
+        toast(names.length ? `正在监测：${names.join("、")}` : "请至少勾选一路");
+      } catch (err) {
+        toast(err.message);
+        render();
+      }
+    }
+
+    function beginAddCamera() {
+      $("capCamId").value = "";
+      $("capName").value = "";
+      $("capHost").value = "";
+      $("capPort").value = 554;
+      $("capChannel").value = 1;
+      $("capUser").value = "admin";
+      $("capPass").value = "";
+      $("capPass").placeholder = "摄像机密码";
+      for (const btn of $("watchPanel").querySelectorAll("#streamPick .day")) {
+        btn.classList.toggle("on", btn.dataset.stream === "sub");
+      }
+      for (const btn of $("watchPanel").querySelectorAll(".cam-item[data-id]")) {
+        btn.classList.remove("on");
+      }
+      $("capName").focus();
+    }
+
+    async function removeCamera() {
+      const id = $("capCamId").value;
+      if (!id) return toast("先选一路再删");
+      if (!confirm("删除这路摄像机？")) return;
+      try {
+        captureSettings = await api("/api/capture", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ remove_camera_id: id }),
+        });
+        render();
+        toast("已删除");
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    async function saveCapture() {
+      try {
+        const source = $("capSource").value;
+        const body = { source };
+        if (source === "rtsp") {
+          const camera = {
+            id: $("capCamId").value || undefined,
+            name: $("capName").value.trim(),
+            host: $("capHost").value.trim(),
+            port: Number($("capPort").value) || 554,
+            channel: Number($("capChannel").value) || 1,
+            username: $("capUser").value.trim() || "admin",
+            stream: selectedStream(),
+          };
+          const password = $("capPass").value;
+          if (password) camera.password = password;
+          body.camera = camera;
+        }
+        captureSettings = await api("/api/capture", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        render();
+        toast(source === "rtsp" ? `已保存 ${captureSettings.cameras && captureSettings.cameras.length ? (captureSettings.cameras.find((c) => c.id === captureSettings.camera_id) || {}).name || "摄像机" : ""}，跟拍进程几秒内重连` : "已保存监测源");
+      } catch (err) {
+        toast(err.message);
       }
     }
 
@@ -786,17 +1017,20 @@
     }
 
     async function refreshPeople() {
+      const editingHours = view === "watch" && document.activeElement && $("watchPanel").contains(document.activeElement);
       people = await api("/api/people");
       if (view === "log") {
         visits = await api("/api/appear?limit=200");
       }
       if (view === "watch") {
         watchReport = await api("/api/watch");
+        if (!editingHours) {
+          try { captureSettings = await api("/api/capture"); } catch (_) {}
+        }
       }
       if (selected && !people.some((p) => p.id === selected.id)) {
         selected = null;
       }
-      const editingHours = view === "watch" && document.activeElement && $("watchPanel").contains(document.activeElement);
       if (!editingHours) render();
     }
 
@@ -903,7 +1137,10 @@
     };
     $("btnWatch").onclick = async () => {
       view = "watch";
-      try { watchReport = await api("/api/watch"); } catch (err) { toast(err.message); }
+      try {
+        watchReport = await api("/api/watch");
+        captureSettings = await api("/api/capture");
+      } catch (err) { toast(err.message); }
       render();
     };
     $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeDrawer(); });
@@ -973,16 +1210,33 @@
     function paintDevice(data) {
       const pill = $("devicePill");
       const on = !!data.online;
+      const kind = data.kind || (data.capture === "rtsp" ? "rtsp" : "");
       pill.classList.toggle("on", on);
       pill.classList.toggle("off", !on);
-      pill.innerHTML = `<i></i> Pocket 3 ${on ? "在线" : "离线"}`;
+      pill.innerHTML = kind === "rtsp"
+        ? `<i></i> 局域网 ${on ? "在线" : "离线"}`
+        : `<i></i> Pocket 3 ${on ? "在线" : "离线"}`;
+      if (data.capture_settings) captureSettings = data.capture_settings;
       const extra = (data.watch && data.watch.detail) ? ` · ${data.watch.detail}` : "";
       $("deviceDetail").textContent = (data.detail || "") + extra;
       paintStation(data.watch);
       if (data.present) present = data.present;
+      paintLive(data.preview);
       const n = present.fresh ? (present.count || 0) : 0;
       $("btnPresent").textContent = n ? `在镜中 ${n}` : "在镜中";
       if (view === "present") renderPresent();
+    }
+    function paintLive(preview) {
+      const img = $("livePreview");
+      const empty = $("liveEmpty");
+      if (!img || !empty) return;
+      const fresh = !!(preview && preview.fresh);
+      empty.hidden = fresh;
+      img.classList.toggle("off", !fresh);
+      if (img.dataset.live !== "1") {
+        img.dataset.live = "1";
+        img.src = "/api/preview";
+      }
     }
     function paintGimbal(data) {
       const wifi = data.backend === "wifi";

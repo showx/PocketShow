@@ -1,5 +1,7 @@
+# 复制后按本机情况改，不要提交 default.yaml：
+#   cp configs/default.example.yaml configs/default.yaml
 capture:
-  source: auto          # auto | usb | camera | file | wifi
+  source: auto          # auto | usb | camera | file | wifi | rtsp
   device_index: 0
   file: null
   width: 1920
@@ -8,11 +10,16 @@ capture:
 
 detect:
   model: yolo11n.pt
-  imgsz: 640
-  conf: 0.35
+  imgsz: 1280           # 广角工位远处小人至少 1280；近距离跟拍可改回 640
+  conf: 0.20
   iou: 0.5
   device: auto          # auto | mps | cpu | 0
   tracker: bytetrack.yaml
+  min_height: 12
+  far_pass: true        # 画面上半再切两块高分检测，补远处漏检
+  far_ratio: 0.75
+  far_tiles: 2
+  tile_overlap: 0.2
 
 follow:
   deadzone: 0.08
@@ -30,7 +37,8 @@ recognize:
   match_threshold: 0.43   # 达到则认定为已有人物（A/B 约 0.37，不能再低）
   soft_threshold: 0.38    # 弱匹配并入已有人物；同框第二张脸不再开新档
   dup_threshold: 0.70     # 管理页「疑似同一人」：模板对中位数，同框过的人不会提示
-  det_score: 0.7
+  det_score: 0.5          # 远处小脸分数偏低
+  det_min_face: 12
   enroll_score: 0.88
   enroll_min_face: 36
   enroll_confirm: 18
@@ -38,6 +46,7 @@ recognize:
   liveness: true            # 拦纸质照片 / 手机屏幕翻拍
   liveness_threshold: 0.62
   liveness_confirm: 5       # 连续通过才认人、才自动登记
+  liveness_min_face: 40     # 小于此像素跳过活体，否则远处正脸也被拦
   gallery: data/faces.json
   photos: data/faces
 
@@ -57,6 +66,19 @@ wifi:
   video_width: 1280
   video_height: 720
 
+rtsp:
+  camera_id: ""         # 当前监测的摄像机 id
+  username: admin
+  password: ""          # 各路没单独填密码时用这个；也可用 POCKETSHOW_RTSP_PASSWORD
+  cameras: []           # 管理页添加多路，勾选 monitor 决定监测哪些；NVR 同一 IP 用不同 channel
+  host: ""              # 兼容单路：没有 cameras 时用这里
+  port: 554
+  channel: 1
+  stream: sub           # 远处看不清可改 main 主码流
+  url: ""
+  transport: tcp
+  settings: data/capture.json
+
 watch:
   enabled: true
   away_s: 30              # 离开工位超过这么多秒，管理页报警
@@ -66,3 +88,5 @@ watch:
   status: data/station.json
   settings: data/watch.json
   log: data/away.jsonl
+
+preview: data/preview.jpg   # 跟拍画布，管理页「离岗分析」里看
