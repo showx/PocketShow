@@ -5,10 +5,14 @@ from pocketshow.capture import (
     build_rtsp_url,
     camera_as_rtsp,
     compose_grid,
+    ffmpeg_rtsp_cmd,
     grid_layout,
     hik_channel,
+    looks_corrupt,
+    pane_from_norm,
     pane_index,
     redact_rtsp_url,
+    should_reconnect,
     stream_label,
 )
 from pocketshow.config import CaptureConfig, RtspCamera, RtspConfig, Settings, load_settings
@@ -77,6 +81,141 @@ def test_compose_grid_and_pane():
     assert grid_layout(8) == (2, 4)
     eight = compose_grid([np.zeros((10, 10, 3), dtype=np.uint8)] * 8, (1600, 800))
     assert eight.shape == (800, 1600, 3)
+
+
+def test_letterbox_keeps_aspect_and_maps_click():
+    from pocketshow.capture import letterbox_into, letterbox_to_source, pane_source_xy
+
+    src = np.full((90, 160, 3), 40, dtype=np.uint8)
+    tile, (x0, y0, nw, nh) = letterbox_into(src, 200, 240)
+    assert tile.shape == (240, 200, 3)
+    assert (nw, nh) == (160, 90)
+    assert letterbox_to_source(0, 0, 200, 240, 160, 90) is None
+    cx, cy = letterbox_to_source(x0 + nw / 2, y0 + nh / 2, 200, 240, 160, 90)
+    assert abs(cx - 80) <= 2
+    assert abs(cy - 45) <= 2
+    hit = pane_source_xy(x0 + 10, y0 + 10, 2, (400, 240), 160, 90)
+    assert hit is not None and hit[0] == 0
+
+
+def test_native_mosaic_does_not_upscale():
+    from pocketshow.capture import letterbox_into, native_mosaic_size
+
+    a = np.zeros((576, 704, 3), dtype=np.uint8)
+    b = np.zeros((576, 704, 3), dtype=np.uint8)
+    assert native_mosaic_size([a, b]) == (1408, 576)
+    assert native_mosaic_size([]) == (1280, 720)
+    tile, (_x0, _y0, nw, nh) = letterbox_into(a, 1920, 1080)
+    assert (nw, nh) == (704, 576)
+    small = np.zeros((576, 704, 3), dtype=np.uint8)
+    shrunk, extra = letterbox_into(small, 320, 240)
+    assert extra[2] <= 320 and extra[3] <= 240
+
+
+def test_pending_frame_keeps_latest_only():
+    from pocketshow.app import CameraView, _push_frame, _take_pending
+
+    view = CameraView("a", "a", None, None, None, 0)
+    first = np.zeros((2, 2, 3), dtype=np.uint8)
+    second = np.ones((2, 2, 3), dtype=np.uint8)
+    _push_frame(view, first)
+    _push_frame(view, second)
+    got = _take_pending(view)
+    assert got is second
+    assert _take_pending(view) is None
+
+
+def test_pane_from_norm_two_cameras():
+    left = pane_from_norm(0.25, 0.5, 2)
+    right = pane_from_norm(0.75, 0.4, 2)
+    assert left is not None and left[0] == 0
+    assert abs(left[1] - 0.5) < 1e-6
+    assert right is not None and right[0] == 1
+    assert abs(right[2] - 0.4) < 1e-6
+    assert pane_from_norm(0.9, 0.9, 0) is None
+
+
+def test_looks_corrupt_flower_vs_office():
+    office = np.zeros((360, 640, 3), dtype=np.uint8)
+    office[:] = (90, 95, 100)
+    office[40:200, 30:180] = (40, 40, 40)
+    office[50:160, 400:600] = (200, 210, 220)
+    office[200:280, 100:300] = (70, 90, 160)
+    office[220:300, 320:520] = (30, 30, 35)
+    assert looks_corrupt(office) is False
+    assert looks_corrupt(None) is True
+    assert looks_corrupt(np.zeros((240, 320, 3), dtype=np.uint8)) is True
+    rng = np.random.default_rng(0)
+    washed = np.clip(
+        np.full((360, 640, 3), 128, dtype=np.int16) + rng.integers(-4, 5, size=(360, 640, 3)),
+        0,
+        255,
+    ).astype(np.uint8)
+    assert looks_corrupt(washed) is True
+
+
+def test_ffmpeg_rtsp_cmd_keeps_complete_frames():
+    cmd = ffmpeg_rtsp_cmd("rtsp://cam/Streaming/Channels/102", 1920, 1080, "tcp")
+    text = " ".join(cmd)
+    assert "+genpts+discardcorrupt" in text
+    assert "scale=1920:1080" in text
+    assert "lanczos" in text
+    assert "in_range=tv" in text
+    assert "nobuffer" not in text
+    assert cmd[cmd.index("-rtsp_transport") + 1] == "tcp"
+
+
+def test_should_reconnect_after_streak():
+    assert should_reconnect(1) is False
+    assert should_reconnect(12) is True
+    assert should_reconnect(13) is False
+    assert should_reconnect(40) is True
+    assert should_reconnect(80) is True
+
+
+def test_ffmpeg_capture_drops_stale_after_stop():
+    import threading
+    import time
+
+    from pocketshow.capture import FfmpegRtspCapture
+
+    cap = object.__new__(FfmpegRtspCapture)
+    cap._running = False
+    cap._lock = threading.Lock()
+    cap._frame = np.full((20, 30, 3), 80, dtype=np.uint8)
+    cap._stamp = time.monotonic()
+    assert cap.read() is None
+
+
+def test_list_avfoundation_uses_timeout(monkeypatch):
+    import subprocess
+
+    from pocketshow.capture import list_avfoundation_names
+
+    called: dict = {}
+
+    class Result:
+        stderr = ""
+
+    def fake_run(*args, **kwargs):
+        called["args"] = args
+        called.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr("pocketshow.capture.subprocess.run", fake_run)
+    assert list_avfoundation_names() == []
+    assert called.get("timeout") == 3
+    assert called.get("stdin") is subprocess.DEVNULL
+
+
+def test_reopen_rtsp_unknown_camera():
+    from pocketshow.capture import reopen_rtsp
+
+    try:
+        reopen_rtsp(RtspConfig(cameras=[RtspCamera(id="office", name="工位区1")]), "missing")
+        raise AssertionError("should fail")
+    except RuntimeError as exc:
+        assert "missing" in str(exc)
 
 
 def test_camera_as_rtsp_uses_channel():

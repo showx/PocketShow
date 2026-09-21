@@ -132,14 +132,14 @@
     button:focus-visible, .btn:focus-visible, input:focus-visible {
       outline: 2px solid rgba(236,231,220,.35); outline-offset: 2px;
     }
-    #btnCam.active { border-color: var(--cream); color: var(--cream); }
+    #btnCam.active, #btnWatchSettings.active { border-color: var(--cream); color: var(--cream); }
     main { padding: 28px 28px 96px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 18px; }
-    .card, .present-card {
+    .card {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
       cursor: pointer; transition: border-color .18s ease, background .18s ease;
     }
-    .card:hover, .present-card:hover { border-color: var(--line-strong); background: #1a1a1c; }
+    .card:hover { border-color: var(--line-strong); background: #1a1a1c; }
     .thumb {
       aspect-ratio: 3 / 4; background: #0e0e10 center/cover no-repeat;
       display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px;
@@ -193,18 +193,6 @@
       border: 1px dashed var(--line-strong); border-radius: 10px; padding: 18px; text-align: center;
       color: var(--muted); margin-top: 8px; background: rgba(255,255,255,.02);
     }
-    .log { display: flex; flex-direction: column; gap: 8px; max-width: 820px; }
-    .visit {
-      display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center;
-      background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
-    }
-    .visit:hover { border-color: var(--line-strong); }
-    .visit img, .visit .ph {
-      width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #0e0e10;
-    }
-    .visit .ph { display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px; }
-    .visit strong { display: block; font-weight: 600; }
-    .visit small { color: var(--muted); }
     .tag { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(143,191,154,.12); color: var(--live); white-space: nowrap; letter-spacing: .04em; }
     .tag.off { background: rgba(255,255,255,.04); color: var(--muted); }
     .dock {
@@ -224,32 +212,106 @@
     .dock .status.warn { color: var(--warn); }
     .dock input[type="range"] { width: 100%; accent-color: var(--cream); }
     body.dock-open main { padding-bottom: 240px; }
-    .watch-panel { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
-    .live-stage {
-      position: relative;
+    body.view-watch main { display: block; }
+    .watch-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .live-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-start;
       margin-top: 4px;
+    }
+    .live-tile {
+      position: relative;
       background: #0a0a0c;
       border: 1px solid var(--line);
       border-radius: 10px;
       overflow: hidden;
-      aspect-ratio: 16 / 9;
+      line-height: 0;
+      cursor: crosshair;
     }
-    .live-stage img {
-      display: block; width: 100%; height: 100%;
-      object-fit: contain; background: #0a0a0c;
+    .live-tile img {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: none;
+      background: #0a0a0c;
     }
-    .live-stage img.off { opacity: .28; }
+    .live-tile img.off { opacity: .28; }
     .live-empty {
-      position: absolute; inset: 0;
       display: grid; place-items: center;
-      margin: 0; padding: 24px;
+      margin: 0; padding: 48px 24px;
+      min-height: 160px; flex: 1 1 100%;
       color: var(--muted); font-size: 13px; text-align: center; line-height: 1.6;
-      pointer-events: none;
     }
+    .scene-caption {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: rgba(16,16,18,.78);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px; line-height: 1.5;
+      color: var(--cream);
+    }
+    .scene-caption small { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .scene-caption.warn { color: var(--warn); }
+    .scene-event {
+      display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
+      padding: 10px 0; border-bottom: 1px solid var(--line);
+      font-size: 13px; line-height: 1.45;
+    }
+    .scene-event:last-child { border-bottom: 0; }
+    .scene-event small { color: var(--muted); }
+    .seat-pick {
+      position: fixed;
+      z-index: 12;
+      width: 240px;
+      max-height: 320px;
+      overflow: auto;
+      background: rgba(18,18,20,.96);
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    }
+    .seat-pick p { margin: 0 0 8px; font-size: 13px; }
+    .seat-pick input { width: 100%; min-width: 0; margin-bottom: 8px; }
+    .seat-pick button {
+      display: block; width: 100%; text-align: left;
+      background: transparent; color: var(--text); font-weight: 500;
+      padding: 7px 8px; margin: 0 0 2px;
+    }
+    .seat-pick button:hover { background: rgba(255,255,255,.06); }
+    .seat-pick button.create { color: var(--cream); margin-top: 6px; }
     .watch-card {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px;
     }
     .watch-card h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .08em; }
+    .watch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+    .watch-head h3 { margin: 0; }
+    .watch-head-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+    .watch-status {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      margin: 0 0 12px; padding: 10px 14px;
+      background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 10px;
+      font-size: 13px;
+    }
+    .watch-status .facts { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); }
+    .watch-status b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .watch-status .danger b { color: var(--danger); }
+    .panel.settings { width: min(480px, 100%); }
+    .settings-block { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .settings-block h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .08em; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; margin-top: 12px; }
+    .settings-grid .span-2 { grid-column: 1 / -1; }
+    .settings-grid label { margin: 0; }
+    .settings-grid input, .settings-grid select { width: 100%; min-width: 0; }
+    .settings-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .monitor-bar { margin: 10px 0 12px; }
+    .monitor-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+    .monitor-tools .hint { margin: 0; }
+    .monitor-tools .row { margin: 0; gap: 6px; }
+    .monitor-tools button { padding: 5px 10px; font-size: 12px; }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
     .stat { background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; }
     .stat b { display: block; font-size: 22px; margin-top: 6px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -261,29 +323,30 @@
     .hours-row input[type="text"], .hours-row input[type="password"], .hours-row select { min-width: 140px; }
     .hours-row input.host { min-width: 180px; }
     .stream-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
-    .cam-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
-    .cam-item {
-      text-align: left; border: 1px solid var(--line); background: rgba(255,255,255,.02);
-      color: var(--text); font-weight: 500; padding: 10px 12px;
-    }
-    .cam-item strong { display: block; font-size: 14px; }
-    .cam-item small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; font-weight: 400; }
-    .cam-item.on { border-color: var(--cream); background: rgba(236,231,220,.08); }
-    .cam-item.add { color: var(--muted); border-style: dashed; }
-    .cam-item { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
-    .cam-item .pick { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
-    .cam-item .pick input { accent-color: var(--cream); }
-    .cam-item.watching { border-color: rgba(143,191,154,.35); }
+    .cam-pick { min-width: 220px; }
     .days { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+    .days.monitor-chips { margin: 0; gap: 6px; }
+    .monitor-chips .day { padding: 7px 11px; }
     .day {
       border: 1px solid var(--line); background: transparent; color: var(--muted);
       border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer;
     }
     .day.on { color: var(--ink); border-color: var(--cream); background: var(--cream); }
     .session {
-      display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+      display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center;
       background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
+      margin-top: 8px;
     }
+    .session:first-of-type { margin-top: 0; }
+    .session.is-alarm { border-color: rgba(212,103,103,.28); background: rgba(212,103,103,.05); }
+    .session.is-live { border-color: rgba(143,191,154,.28); }
+    .session img, .session .ph {
+      width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #0e0e10;
+    }
+    .session .ph, .rank .ph { display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px; }
+    .session .when { font-variant-numeric: tabular-nums; }
+    .session-end { text-align: right; }
+    .session-end b { display: block; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .session .tag.alarm { background: rgba(212,103,103,.12); color: var(--danger); }
     .rank {
       display: grid; grid-template-columns: 28px 44px 1fr auto; gap: 10px; align-items: center;
@@ -294,30 +357,30 @@
     .rank img, .rank .ph {
       width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: #0e0e10;
     }
-    .rank .ph { display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 11px; }
     .session small, .rank small { display: block; margin-top: 3px; color: var(--muted); }
     .stat.danger b { color: var(--danger); }
-    .present-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 18px; }
-    .present-card { border-color: rgba(143,191,154,.28); }
-    .present-card .thumb { position: relative; }
-    .live-flag {
-      position: absolute; left: 10px; top: 10px;
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
-      background: rgba(10,12,10,.78); color: var(--live); border: 1px solid rgba(143,191,154,.28);
-      backdrop-filter: blur(8px);
+    .stat.live b { color: var(--live); }
+    .records-hero .hint { max-width: 520px; text-align: right; }
+    .records-hero .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .rank .session-end { text-align: right; }
+    .rank .session-end b { display: block; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .records-body {
+      display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 16px; align-items: start;
     }
-    .live-flag i {
-      width: 6px; height: 6px; border-radius: 50%; background: var(--live);
-      animation: livePulse 1.6s ease-in-out infinite;
+    .records-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .records-empty { padding: 64px 20px; }
+    .records-empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; }
+    @media (max-width: 1100px) {
+      .records-body { grid-template-columns: 1fr; }
+      .records-hero .hint { text-align: left; }
     }
-    @keyframes livePulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: .35; }
+    @media (max-width: 640px) {
+      .settings-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 820px) {
       header, .nav, main { padding-left: 16px; padding-right: 16px; }
       input[type="search"] { min-width: 0; width: 140px; }
+      .records-hero .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -345,9 +408,9 @@
   <nav class="nav">
     <div class="tabs" role="tablist">
       <button type="button" class="active" id="btnPeople">人物库</button>
-      <button type="button" id="btnPresent">在镜中</button>
-      <button type="button" id="btnLog">入镜日志</button>
       <button type="button" id="btnWatch">离岗分析</button>
+      <button type="button" id="btnPresent">在岗人员</button>
+      <button type="button" id="btnRecords">离岗记录</button>
     </div>
     <div class="nav-end">
       <input id="q" type="search" placeholder="搜索姓名 / 备注" />
@@ -359,19 +422,43 @@
   <main>
     <div id="banner" class="banner" hidden></div>
     <div id="grid" class="grid"></div>
-    <div id="log" class="log" hidden></div>
-    <div id="presentPanel" hidden></div>
     <div id="watchLive" class="watch-panel" hidden>
       <section class="watch-card">
-        <h3>监测画面</h3>
-        <p class="hint" style="margin-top:0">和桌面 PocketShow 窗口同一份宫格。跟拍没开时这里是空的。</p>
-        <div class="live-stage" id="liveStage">
-          <img id="livePreview" alt="监测画布" />
-          <p class="live-empty" id="liveEmpty">打开跟拍后，这里会显示监测画布。</p>
+        <div class="watch-head">
+          <h3>监测画面</h3>
+          <div class="watch-head-actions">
+            <span class="hint" id="monitorCount"></span>
+            <button type="button" class="ghost" id="btnWatchSettings">设置</button>
+          </div>
         </div>
+        <div id="watchStatus" class="watch-status" hidden></div>
+        <p class="hint" style="margin-top:0">点检测框，直接用画面里这个人登记，并记下所在摄像头的位置。点空处仍可指定工位；人物库对不上时，输入姓名即可新建。</p>
+        <div id="monitorBar" class="monitor-bar" hidden>
+          <div class="monitor-tools">
+            <p class="hint">点一下开，再点一下关</p>
+            <div class="row">
+              <button type="button" class="ghost" id="monitorAll">全开</button>
+              <button type="button" class="ghost" id="monitorInvert">反选</button>
+            </div>
+          </div>
+          <div class="days monitor-chips" id="monitorChips"></div>
+        </div>
+        <div class="live-grid" id="liveGrid">
+          <p class="live-empty" id="liveEmpty">打开监测后这里会显示画面。点人框即可登记这个人在这路摄像头上的位置。</p>
+        </div>
+        <div id="sceneNow" class="scene-caption" hidden></div>
+        <div id="mapNow" class="scene-caption" hidden></div>
+        <div id="mocapNow" class="scene-caption" hidden></div>
       </section>
     </div>
-    <div id="watchPanel" class="watch-panel" hidden></div>
+    <div id="seatPick" class="seat-pick" hidden>
+      <p id="seatPickTitle">这里是谁的工位？</p>
+      <p class="hint" id="seatPickHint" hidden></p>
+      <input id="seatPickQ" type="text" autocomplete="off" placeholder="搜索或输入新姓名" />
+      <div id="seatPickList"></div>
+    </div>
+    <div id="presentPanel" class="watch-panel" hidden></div>
+    <div id="recordsPanel" class="watch-panel" hidden></div>
     <div id="empty" class="empty" hidden>还没有相片留底。打开跟拍后会自动抓脸，也可以点「登记新人」上传照片。</div>
   </main>
   <div id="drawer" class="drawer">
@@ -404,10 +491,17 @@
     let people = [];
     let selected = null;
     let view = "people";
-    let visits = [];
     let watchReport = null;
+    let recordsFilter = "all";
     let captureSettings = null;
-    let present = { people: [], count: 0, fresh: false };
+    let editingCameraId = null;
+    let watchSettingsOpen = false;
+    let monitorPaintKey = "";
+    let monitorBusy = false;
+    let sceneState = { enabled: false, cameras: [], events: [], error: "" };
+    let mapState = { enabled: false, cameras: [], events: [], error: "" };
+    let mocapState = { enabled: false, cameras: [], events: [], error: "" };
+    let latestPreview = { cameras: [], fresh: false };
     const WEEKDAYS = [[1, "一"], [2, "二"], [3, "三"], [4, "四"], [5, "五"], [6, "六"], [7, "日"]];
 
     async function api(path, opts) {
@@ -425,67 +519,47 @@
     }
 
     function showView(name) {
+      if (name !== "watch") hideSeatPick();
       view = name;
       const panels = {
         people: ["grid", "banner", "empty"],
-        log: ["log"],
+        watch: ["watchLive"],
         present: ["presentPanel"],
-        watch: ["watchLive", "watchPanel"],
+        records: ["recordsPanel"],
       };
-      for (const id of ["grid", "banner", "empty", "log", "presentPanel", "watchLive", "watchPanel"]) {
+      for (const id of ["grid", "banner", "empty", "watchLive", "presentPanel", "recordsPanel"]) {
         $(id).hidden = !(panels[name] || []).includes(id);
       }
       $("btnPeople").classList.toggle("active", name === "people");
       $("btnWatch").classList.toggle("active", name === "watch");
-      $("btnLog").classList.toggle("active", name === "log");
       $("btnPresent").classList.toggle("active", name === "present");
+      $("btnRecords").classList.toggle("active", name === "records");
+      document.body.classList.toggle("view-watch", name === "watch");
+      document.body.classList.toggle("view-records", name === "records" || name === "present");
+      $("q").hidden = name === "watch";
+      const want = name === "watch" ? "#watch" : name === "present" ? "#present" : name === "records" ? "#records" : "";
+      if (location.hash !== want) history.replaceState(null, "", want || location.pathname + location.search);
+      if (name !== "watch" && watchSettingsOpen) closeDrawer();
+      if (name === "watch") paintMonitorBar();
     }
 
     function render() {
-      if (view === "present") {
-        showView("present");
-        $("q").placeholder = "筛选在镜中的人";
-        renderPresent();
-        return;
-      }
       if (view === "watch") {
         showView("watch");
-        $("q").placeholder = "筛选离岗记录";
+        $("q").placeholder = "搜索姓名 / 备注";
         renderWatch();
         return;
       }
-      if (view === "log") {
-        showView("log");
+      if (view === "present") {
+        showView("present");
         $("q").placeholder = "筛选姓名";
-        $("summary").textContent = visits.filter((v) => !v.live).length
-          ? `最近 ${visits.filter((v) => !v.live).length} 条入镜记录`
-          : "暂无入镜记录";
-        const q = $("q").value.trim().toLowerCase();
-        const list = visits.filter((v) =>
-          !v.live && (!q || (v.name + " " + v.person_id).toLowerCase().includes(q))
-        );
-        if (!list.length) {
-          $("log").innerHTML = `<div class="empty" style="padding:40px 0">还没有入镜记录。打开跟拍后，识别到的人会按次记在这里。</div>`;
-          return;
-        }
-        $("log").innerHTML = list.map((v) => `
-          <article class="visit" data-id="${v.person_id}">
-            ${v.photo ? `<img src="/media/${v.photo}" alt="" />` : `<div class="ph">无图</div>`}
-            <div>
-              <strong>${escapeHtml(v.name)}${isGuestId(v.person_id) ? `<span class="badge guest">客人</span>` : ""}</strong>
-              <small>${escapeHtml(v.start || "")}${v.end ? " → " + escapeHtml(v.end) : ""} · ${escapeHtml(v.duration || "")}${v.frames ? " · " + v.frames + " 帧" : ""}</small>
-            </div>
-            <span class="tag off">已离镜</span>
-          </article>
-        `).join("");
-        for (const row of $("log").querySelectorAll(".visit")) {
-          row.style.cursor = "pointer";
-          row.onclick = () => {
-            view = "people";
-            render();
-            openPerson(row.dataset.id);
-          };
-        }
+        renderPresent();
+        return;
+      }
+      if (view === "records") {
+        showView("records");
+        $("q").placeholder = "筛选姓名";
+        renderRecords();
         return;
       }
       showView("people");
@@ -512,7 +586,7 @@
           </div>
           <div class="meta">
             <strong>${escapeHtml(p.name)}</strong>
-            <small>${p.samples} 次入镜${p.updated_at ? " · " + p.updated_at : ""}</small>
+            <small>${[seatLabel(p), p.updated_at].filter(Boolean).join(" · ") || "尚未指定工位"}</small>
             ${p.guest ? `<div class="badge guest">客人</div>` : ""}
             ${p.twins && p.twins.length ? `<div class="badge">疑似与 ${twinBadge(p)} 为同一人</div>` : ""}
           </div>
@@ -530,43 +604,9 @@
 
     function selectedDays() {
       return WEEKDAYS.filter(([id]) => {
-        const el = document.querySelector(`.day[data-day="${id}"]`);
+        const el = document.querySelector(`#workDays .day[data-day="${id}"]`);
         return el && el.classList.contains("on");
       }).map(([id]) => id);
-    }
-
-    function renderPresent() {
-      const rows = present.people || [];
-      const q = $("q").value.trim().toLowerCase();
-      const list = rows.filter((p) => !q || ((p.name || "") + " " + (p.person_id || "")).toLowerCase().includes(q));
-      if (present.fresh) {
-        $("summary").textContent = rows.length ? `镜头里 ${rows.length} 人` : "镜头里现在没人";
-      } else {
-        $("summary").textContent = "跟拍未在更新在镜名单";
-      }
-      if (!list.length) {
-        $("presentPanel").innerHTML = `<div class="empty" style="padding:80px 20px">${present.fresh ? "镜头里现在没人。" : "打开跟拍后，识别到的人会出现在这里。"}</div>`;
-        return;
-      }
-      $("presentPanel").innerHTML = `<div class="present-grid">${list.map((p) => `
-        <article class="present-card" data-id="${escapeHtml(p.person_id || "")}">
-          <div class="thumb" style="${p.photo ? `background-image:url('/media/${p.photo}')` : ""}">
-            <span class="live-flag"><i></i>在镜中</span>
-            ${p.photo ? "" : "尚无相片"}
-          </div>
-          <div class="meta">
-            <strong>${escapeHtml(p.name || p.person_id || "")}${isGuestId(p.person_id) || p.guest ? `<span class="badge guest">客人</span>` : ""}</strong>
-            <small>已待 ${escapeHtml(p.duration || "")}${p.start_ts ? " · " + escapeHtml(p.start_ts) : ""}</small>
-          </div>
-        </article>
-      `).join("")}</div>`;
-      for (const card of $("presentPanel").querySelectorAll(".present-card")) {
-        card.onclick = () => {
-          view = "people";
-          render();
-          openPerson(card.dataset.id);
-        };
-      }
     }
 
     function selectedStream() {
@@ -576,36 +616,73 @@
 
     function renderWatch() {
       const report = watchReport || { settings: {}, state: {}, today: { sessions: [] } };
-      const cap = captureSettings || { source: "auto", stream: "sub", port: 554, channel: 1, username: "admin", cameras: [] };
-      const selectedCam = (cap.cameras || []).find((c) => c.id === cap.camera_id) || (cap.cameras || [])[0] || cap;
-      const capName = selectedCam.name || "";
+      const cap = captureSettings || { source: "auto", cameras: [] };
       const s = report.settings || {};
       const st = report.state || {};
       const today = report.today || { sessions: [] };
-      const days = new Set(s.workdays || [1, 2, 3, 4, 5]);
-      const alarms = (today.alarms || today.sessions || []).filter((row) => row.alarm);
-      const ranks = today.by_person || [];
-      const q = $("q").value.trim().toLowerCase();
-      const sessions = (today.sessions || []).filter((row) => {
-        if (!q) return true;
-        const blob = (row.name || "") + " " + (row.names || []).join(" ") + " " + (row.start_ts || "") + " " + (row.duration || "");
-        return blob.toLowerCase().includes(q);
-      });
-      const alarmRows = alarms.filter((row) => {
-        if (!q) return true;
-        const blob = (row.name || "") + " " + (row.start_ts || "") + " " + (row.duration || "");
-        return blob.toLowerCase().includes(q);
-      });
-      const rankRows = ranks.filter((row) => !q || (row.name || "").toLowerCase().includes(q));
       $("summary").textContent = s.hours_label
         ? `${s.hours_label}${s.on_duty ? " · 检测中" : " · 现在下班不计"}`
         : "离岗分析";
-      $("watchPanel").innerHTML = `
-        <section class="watch-card">
+      const status = $("watchStatus");
+      if (status) {
+        const cameras = cap.cameras || [];
+        const sourceLabel = cap.source === "rtsp"
+          ? (cameras.length ? `局域网 · ${cameras.length} 路` : "局域网监控")
+          : cap.source === "usb" ? "USB 摄像头" : "Pocket 自动";
+        status.hidden = false;
+        status.innerHTML = `
+          <div class="facts">
+            <span>当前 <b>${escapeHtml(st.label || "—")}</b></span>
+            <span>今天离岗 <b>${today.away_count || 0}</b></span>
+            <span>累计 <b>${escapeHtml(today.away_label || "0 秒")}</b></span>
+            <span class="danger">报警 <b>${today.alarm_count || 0}</b></span>
+            <span>${escapeHtml(sourceLabel)}</span>
+          </div>
+          <div class="row" style="margin:0;gap:8px">
+            <button type="button" class="ghost" id="openPresent">在岗人员</button>
+            <button type="button" class="ghost" id="openRecords">离岗记录</button>
+          </div>
+        `;
+        const openPresent = $("openPresent");
+        if (openPresent) openPresent.onclick = () => openPresentView();
+        const openRecords = $("openRecords");
+        if (openRecords) openRecords.onclick = () => openRecordsView();
+      }
+      paintMonitorBar();
+      paintScene(sceneState);
+      paintMap(mapState);
+      paintMocap(mocapState);
+    }
+
+    function openWatchSettings() {
+      const report = watchReport || { settings: {}, state: {}, today: { sessions: [] } };
+      const cap = captureSettings || { source: "auto", stream: "sub", port: 554, channel: 1, username: "admin", cameras: [] };
+      const cameras = cap.cameras || [];
+      const editId = editingCameraId !== null ? editingCameraId : (cap.camera_id || "");
+      const adding = editId === "";
+      const selectedCam = adding
+        ? { stream: "sub", port: 554, channel: 1, username: "admin" }
+        : (cameras.find((c) => c.id === editId) || cameras[0] || cap);
+      const capName = selectedCam.name || "";
+      const s = report.settings || {};
+      const days = new Set(s.workdays || [1, 2, 3, 4, 5]);
+      watchSettingsOpen = true;
+      selected = null;
+      $("panel").classList.add("settings");
+      $("btnWatchSettings").classList.add("active");
+      $("panel").innerHTML = `
+        <div class="panel-head">
+          <div>
+            <p class="kicker">离岗分析</p>
+            <strong>监测设置</strong>
+          </div>
+          <button class="ghost" type="button" id="close">关闭</button>
+        </div>
+        <div class="settings-block" style="margin-top:0;padding-top:0;border-top:0">
           <h3>摄像机</h3>
-          <p class="hint" style="margin-top:0">勾选「监测」的通道会同时拉流。点名称只改下面的编辑项，不会单独切路。</p>
-          <div class="hours-row">
-            <label>视频源
+          <p class="hint" style="margin-top:0">改 IP、通道和码流。要看哪几路，关抽屉后点监测画面上的通道。</p>
+          <div class="settings-grid">
+            <label class="span-2">视频源
               <select id="capSource">
                 <option value="auto" ${cap.source === "auto" ? "selected" : ""}>Pocket 自动</option>
                 <option value="usb" ${cap.source === "usb" ? "selected" : ""}>USB / 摄像头</option>
@@ -614,109 +691,57 @@
             </label>
           </div>
           <div id="rtspFields" ${cap.source === "rtsp" ? "" : "hidden"}>
-            <div class="cam-list" id="camList">
-              ${(cap.cameras || []).map((cam) => `
-                <button type="button" class="cam-item ${cam.id === cap.camera_id ? "on" : ""} ${cam.monitor ? "watching" : ""}" data-id="${escapeHtml(cam.id)}">
-                  <label class="pick" data-id="${escapeHtml(cam.id)}">
-                    <input type="checkbox" ${cam.monitor ? "checked" : ""} />监测
-                  </label>
-                  <span>
-                    <strong>${escapeHtml(cam.name || cam.host || cam.id)}</strong>
-                    <small>${escapeHtml(cam.host || "未填 IP")} · 通道 ${cam.channel || 1} · ${escapeHtml(cam.stream_label || "")}</small>
-                  </span>
-                </button>
-              `).join("")}
-              <button type="button" class="cam-item add" id="addCamera">+ 添加摄像机</button>
+            <div class="settings-grid">
+              <label class="span-2">编辑哪路
+                <select id="capCamPick" class="cam-pick">
+                  <option value="" ${adding ? "selected" : ""}>添加新摄像机…</option>
+                  ${cameras.map((cam) => `
+                    <option value="${escapeHtml(cam.id)}" ${!adding && cam.id === selectedCam.id ? "selected" : ""}>${escapeHtml(cam.name || cam.host || cam.id)} · 通道 ${cam.channel || 1}</option>
+                  `).join("")}
+                </select>
+              </label>
+              <input id="capCamId" type="hidden" value="${escapeHtml(adding ? "" : (selectedCam.id || ""))}" />
+              <label class="span-2">名称 <input id="capName" type="text" value="${escapeHtml(capName)}" placeholder="工位区 / 门口" /></label>
+              <label class="span-2">摄像机 / NVR IP <input id="capHost" class="host" type="text" value="${escapeHtml(selectedCam.host || "")}" placeholder="192.168.0.177" /></label>
+              <label>端口 <input id="capPort" type="number" min="1" max="65535" value="${Number(selectedCam.port || 554)}" /></label>
+              <label>通道 <input id="capChannel" type="number" min="1" max="64" value="${Number(selectedCam.channel || 1)}" /></label>
+              <label>账号 <input id="capUser" type="text" value="${escapeHtml(selectedCam.username || "admin")}" /></label>
+              <label>密码 <input id="capPass" type="password" value="" placeholder="${selectedCam.has_password ? "已保存，留空不改" : "摄像机密码"}" autocomplete="off" /></label>
             </div>
-            <div class="hours-row" style="margin-top:12px">
-              <input id="capCamId" type="hidden" value="${escapeHtml(cap.camera_id || "")}" />
-              <label>名称 <input id="capName" type="text" value="${escapeHtml(capName)}" placeholder="工位区 / 门口" /></label>
-              <label>摄像机 / NVR IP <input id="capHost" class="host" type="text" value="${escapeHtml(cap.host || "")}" placeholder="192.168.0.177" /></label>
-              <label>端口 <input id="capPort" type="number" min="1" max="65535" value="${Number(cap.port || 554)}" /></label>
-              <label>通道 <input id="capChannel" type="number" min="1" max="64" value="${Number(cap.channel || 1)}" /></label>
-              <label>账号 <input id="capUser" type="text" value="${escapeHtml(cap.username || "admin")}" /></label>
-              <label>密码 <input id="capPass" type="password" value="" placeholder="${cap.has_password ? "已保存，留空不改" : "摄像机密码"}" autocomplete="off" /></label>
-            </div>
-            <p class="hint" style="margin:12px 0 0">码流 ${escapeHtml(cap.stream_label || "")}${cap.url ? " · " + escapeHtml(cap.url) : ""}</p>
+            <p class="hint" style="margin:12px 0 0">码流 ${escapeHtml(selectedCam.stream_label || "")}${selectedCam.url ? " · " + escapeHtml(selectedCam.url) : ""}。</p>
             <div class="stream-pick" id="streamPick">
-              ${[["main", "主码流"], ["sub", "子码流（推荐）"], ["third", "第三码流"]].map(([id, name]) =>
-                `<button type="button" class="day ${cap.stream === id ? "on" : ""}" data-stream="${id}">${name}</button>`
+              ${[["main", "主码流"], ["sub", "子码流"], ["third", "第三码流"]].map(([id, name]) =>
+                `<button type="button" class="day ${selectedCam.stream === id ? "on" : ""}" data-stream="${id}">${name}</button>`
               ).join("")}
             </div>
+            <div class="settings-actions">
+              <button type="button" class="ghost" id="addCamera">添加一路</button>
+              <button type="button" class="ghost" id="removeCamera" ${cameras.length ? "" : "hidden"}>删除这路</button>
+            </div>
           </div>
-          <div class="hours-row" style="margin-top:14px">
-            <button type="button" id="saveCapture">保存这路</button>
-            <button type="button" class="ghost" id="removeCamera" ${(cap.cameras || []).length ? "" : "hidden"}>删除这路</button>
+          <div class="settings-actions">
+            <button type="button" id="saveCapture">保存摄像机</button>
           </div>
-        </section>
-        <section class="watch-card">
+        </div>
+        <div class="settings-block">
           <h3>上班时间</h3>
-          <p class="hint" style="margin-top:0">上班时段里，谁离开镜头超过报警秒数就会记一笔。工位上还有别人时，也会记这个人自己的离岗。人物库里标成客人的人不计入离岗和报警。</p>
-          <div class="hours-row">
+          <p class="hint" style="margin-top:0">上班时段里离开镜头超过报警秒数会记一笔。只冒一下头不算来过。工位上还有别人时，也记这个人自己的离岗。客人除外。</p>
+          <div class="settings-grid">
             <label>上班 <input id="workStart" type="time" value="${escapeHtml(s.work_start || "09:00")}" /></label>
             <label>下班 <input id="workEnd" type="time" value="${escapeHtml(s.work_end || "18:30")}" /></label>
-            <label>离岗报警（秒） <input id="awaySec" type="number" min="3" max="3600" step="1" value="${Number(s.away_s || 30)}" /></label>
-            <button type="button" id="saveHours">保存</button>
+            <label class="span-2">离岗报警（秒） <input id="awaySec" type="number" min="3" max="3600" step="1" value="${Number(s.away_s || 30)}" /></label>
           </div>
-          <div class="days">
+          <div class="days" id="workDays">
             ${WEEKDAYS.map(([id, name]) => `<button type="button" class="day ${days.has(id) ? "on" : ""}" data-day="${id}">周${name}</button>`).join("")}
           </div>
-        </section>
-        <section class="watch-card">
-          <h3>今天 ${escapeHtml(today.date || "")}</h3>
-          <div class="stats">
-            <div class="stat"><span>当前</span><b>${escapeHtml(st.label || "—")}</b></div>
-            <div class="stat"><span>离岗次数</span><b>${today.away_count || 0}</b></div>
-            <div class="stat"><span>累计离开</span><b>${escapeHtml(today.away_label || "0 秒")}</b></div>
-            <div class="stat danger"><span>报警次数</span><b>${today.alarm_count || 0}</b></div>
+          <div class="settings-actions">
+            <button type="button" id="saveHours">保存上班时间</button>
           </div>
-        </section>
-        <section class="watch-card">
-          <h3>报警统计</h3>
-          <div class="stats">
-            <div class="stat danger"><span>报警次数</span><b>${today.alarm_count || 0}</b></div>
-            <div class="stat"><span>累计报警</span><b>${escapeHtml(today.alarm_label || "0 秒")}</b></div>
-            <div class="stat"><span>最长一次</span><b>${escapeHtml(today.longest_label || "0 秒")}</b></div>
-            <div class="stat"><span>涉及人数</span><b>${today.people_count || 0}</b></div>
-          </div>
-          ${rankRows.length ? rankRows.map((row, i) => `
-            <div class="rank" data-id="${escapeHtml(row.person_id || "")}">
-              <span class="n">${i + 1}</span>
-              ${row.photo ? `<img src="/media/${row.photo}" alt="" />` : `<div class="ph">无图</div>`}
-              <div>
-                <strong>${escapeHtml(row.name || row.person_id || "")}</strong>
-                <small>${row.alarm_count} 次 · 最长 ${escapeHtml(row.longest_label || "")}${row.last_ts ? " · 最近 " + escapeHtml(row.last_ts) : ""}</small>
-              </div>
-              <strong>${escapeHtml(row.alarm_label || "")}</strong>
-            </div>
-          `).join("") : `<div class="empty" style="padding:28px 0">今天还没有达到报警时长的离岗。</div>`}
-        </section>
-        <section class="watch-card">
-          <h3>报警记录</h3>
-          ${alarmRows.length ? alarmRows.map((row) => `
-            <div class="session" style="margin-top:8px" data-id="${escapeHtml(row.person_id || "")}">
-              <div>
-                <strong>${escapeHtml(row.name || (row.names && row.names[0]) || "未识别")}</strong>
-                <small>${escapeHtml(row.start_ts || "")} → ${escapeHtml(row.end_ts || "")} · ${escapeHtml(row.duration || "")}</small>
-              </div>
-              <span class="tag alarm">${row.live ? "进行中" : "已报警"}</span>
-            </div>
-          `).join("") : `<div class="empty" style="padding:28px 0">离开镜头超过 ${Number(s.away_s || 30)} 秒才会记入报警。</div>`}
-        </section>
-        <section class="watch-card">
-          <h3>离岗记录</h3>
-          ${sessions.length ? sessions.map((row) => `
-            <div class="session" style="margin-top:8px">
-              <div>
-                <strong>${escapeHtml(row.name || (row.names && row.names[0]) || "未识别")}</strong>
-                <small>${escapeHtml(row.start_ts || "")} → ${escapeHtml(row.end_ts || "")} · ${escapeHtml(row.duration || "")}</small>
-              </div>
-              <span class="tag ${row.alarm ? "alarm" : (row.live ? "" : "off")}">${row.live ? "进行中" : (row.alarm ? "已报警" : "暂离")}</span>
-            </div>
-          `).join("") : `<div class="empty" style="padding:28px 0">上班时段内离开镜头超过报警秒数，会记在这里。</div>`}
-        </section>
+        </div>
       `;
-      for (const btn of $("watchPanel").querySelectorAll(".days .day")) {
+      $("drawer").classList.add("open");
+      $("close").onclick = closeDrawer;
+      for (const btn of $("panel").querySelectorAll("#workDays .day")) {
         btn.onclick = () => btn.classList.toggle("on");
       }
       const sourceSel = $("capSource");
@@ -725,9 +750,9 @@
           $("rtspFields").hidden = sourceSel.value !== "rtsp";
         };
       }
-      for (const btn of $("watchPanel").querySelectorAll("#streamPick .day")) {
+      for (const btn of $("panel").querySelectorAll("#streamPick .day")) {
         btn.onclick = () => {
-          for (const other of $("watchPanel").querySelectorAll("#streamPick .day")) {
+          for (const other of $("panel").querySelectorAll("#streamPick .day")) {
             other.classList.toggle("on", other === btn);
           }
         };
@@ -738,17 +763,145 @@
       if (addBtn) addBtn.onclick = beginAddCamera;
       const removeBtn = $("removeCamera");
       if (removeBtn) removeBtn.onclick = removeCamera;
-      for (const btn of $("watchPanel").querySelectorAll(".cam-item[data-id]")) {
-        btn.onclick = () => selectCamera(btn.dataset.id);
-      }
-      for (const box of $("watchPanel").querySelectorAll(".cam-item .pick")) {
-        box.onclick = (ev) => ev.stopPropagation();
-        const check = box.querySelector("input");
-        if (check) {
-          check.onchange = () => toggleMonitor(box.dataset.id, check.checked);
+      const pick = $("capCamPick");
+      if (pick) pick.onchange = () => fillCameraForm(pick.value);
+    }
+
+    function durationLabel(seconds) {
+      const total = Math.max(0, Math.round(Number(seconds) || 0));
+      if (total < 60) return total + " 秒";
+      const minutes = Math.floor(total / 60);
+      const sec = total % 60;
+      if (minutes < 60) return minutes + " 分 " + sec + " 秒";
+      return Math.floor(minutes / 60) + " 小时 " + (minutes % 60) + " 分";
+    }
+
+    function rankSessions(sessions) {
+      const by = new Map();
+      for (const row of sessions || []) {
+        const id = row.person_id || row.name || "";
+        if (!id) continue;
+        const item = by.get(id) || {
+          person_id: row.person_id || "",
+          name: row.name || (row.names && row.names[0]) || id,
+          photo: row.photo || "",
+          away_count: 0,
+          alarm_count: 0,
+          away_s: 0,
+          longest_s: 0,
+          last_ts: "",
+        };
+        item.away_count += 1;
+        if (row.alarm) item.alarm_count += 1;
+        const dur = Number(row.duration_s || 0);
+        item.away_s += dur;
+        if (dur > item.longest_s) item.longest_s = dur;
+        const ts = row.start_ts || "";
+        if (ts >= item.last_ts) {
+          item.last_ts = ts;
+          item.name = row.name || (row.names && row.names[0]) || item.name;
+          if (row.photo) item.photo = row.photo;
         }
+        by.set(id, item);
       }
-      for (const row of $("watchPanel").querySelectorAll(".rank, .session[data-id]")) {
+      return [...by.values()].sort((a, b) => (b.away_s - a.away_s) || (b.alarm_count - a.alarm_count) || (b.away_count - a.away_count));
+    }
+
+    function personThumb(row) {
+      if (row.photo) return `<img src="/media/${escapeHtml(row.photo)}" alt="" />`;
+      return `<div class="ph">无图</div>`;
+    }
+
+    function rosterMeta(row) {
+      const bits = [];
+      if (row.seat_label) bits.push(row.seat_label);
+      if (row.start_ts && row.status === "at_desk") bits.push("入镜 " + row.start_ts);
+      if (row.start_ts && (row.status === "away" || row.status === "alarm")) bits.push("离开 " + row.start_ts);
+      if (row.guest) bits.push("客人");
+      return bits.join(" · ");
+    }
+
+    function rosterTag(row) {
+      if (row.status === "alarm") return `<span class="tag alarm">${escapeHtml(row.label || "离岗报警")}</span>`;
+      if (row.status === "at_desk") return `<span class="tag">${escapeHtml(row.label || "在岗")}</span>`;
+      return `<span class="tag off">${escapeHtml(row.label || "")}</span>`;
+    }
+
+    function rosterRow(row, i) {
+      const dur = row.status === "at_desk" || row.status === "away" || row.status === "alarm"
+        ? escapeHtml(row.duration || "")
+        : "";
+      return `
+        <div class="rank" data-id="${escapeHtml(row.person_id || "")}">
+          <span class="n">${i + 1}</span>
+          ${personThumb(row)}
+          <div>
+            <strong>${escapeHtml(row.name || row.person_id || "")}${row.guest ? ` <span class="badge guest">客人</span>` : ""}</strong>
+            <small>${escapeHtml(rosterMeta(row) || "尚未指定工位")}</small>
+          </div>
+          <div class="session-end">
+            ${dur ? `<b>${dur}</b>` : ""}
+            ${rosterTag(row)}
+          </div>
+        </div>`;
+    }
+
+    function renderPresent() {
+      const report = watchReport || { settings: {}, roster: {}, today: {} };
+      const s = report.settings || {};
+      const roster = report.roster || {};
+      const q = $("q").value.trim().toLowerCase();
+      const all = roster.people || [];
+      const matched = all.filter((row) => {
+        if (!q) return true;
+        const blob = (row.name || "") + " " + (row.seat_label || "") + " " + (row.label || "");
+        return blob.toLowerCase().includes(q);
+      });
+      const present = matched.filter((row) => row.status === "at_desk");
+      const empty = matched.filter((row) => ["away", "alarm", "waiting", "stale"].includes(row.status));
+      const count = Number(roster.count || 0);
+      $("summary").textContent = roster.fresh
+        ? `当前在岗 ${count} 人`
+        : "在岗人员";
+      const emptyCopy = !roster.fresh
+        ? "打开监测后，这里会列出镜头里认到的人，以及指定了工位但人不在的空位。"
+        : (s.on_duty === false
+          ? "现在下班不计离岗。镜头里认到的人仍会列在这里。"
+          : "镜头里认到、或人还坐在指定工位上的会算在岗。工位上没人的才列在空位。客人不计入在岗人数。");
+      $("presentPanel").innerHTML = `
+        <section class="watch-card records-hero">
+          <div class="watch-head">
+            <h3>在岗人员</h3>
+            <p class="hint" style="margin:0">${s.hours_label ? escapeHtml(s.hours_label) + (s.on_duty ? " · 检测中" : " · 现在下班不计") : "按监测画面里认出的人统计"}</p>
+          </div>
+          <div class="stats">
+            <div class="stat live"><span>当前在岗</span><b>${count}</b></div>
+            <div class="stat"><span>工位空着</span><b>${Number(roster.empty_count || 0)}</b></div>
+            <div class="stat"><span>客人在镜</span><b>${Number(roster.guest_count || 0)}</b></div>
+            <div class="stat"><span>指定工位</span><b>${Number(roster.seated_count || 0)}</b></div>
+          </div>
+        </section>
+        ${!all.length ? `
+          <section class="watch-card">
+            <div class="empty records-empty">
+              <strong>${roster.fresh ? "现在没有在岗人员" : "还看不到谁在岗"}</strong>
+              <p style="margin:0">${emptyCopy}</p>
+            </div>
+          </section>
+        ` : `
+          <div class="records-body">
+            <section class="watch-card">
+              <h3>当前在岗</h3>
+              ${present.length ? present.map((row, i) => rosterRow(row, i)).join("") : `<div class="empty" style="padding:28px 0">${q ? "没有符合筛选的人。" : (roster.fresh ? "镜头里还没有认出人。" : emptyCopy)}</div>`}
+            </section>
+            <section class="watch-card">
+              <h3>工位空着</h3>
+              ${empty.length ? empty.map((row, i) => rosterRow(row, i)).join("") : `<div class="empty" style="padding:28px 0">${q ? "没有符合筛选的空位。" : (Number(roster.seated_count || 0) ? "指定工位的人都在。" : "还没有指定工位。在「离岗分析」监测画面上点人框即可记下位置。")}</div>`}
+            </section>
+          </div>
+        `}
+      `;
+      for (const row of $("presentPanel").querySelectorAll(".rank[data-id]")) {
         row.style.cursor = "pointer";
         row.onclick = () => {
           const id = row.dataset.id;
@@ -760,60 +913,212 @@
       }
     }
 
-    async function selectCamera(id) {
-      try {
-        captureSettings = await api("/api/capture", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: "rtsp", camera_id: id }),
-        });
-        $("capSource").value = "rtsp";
-        render();
-        const cam = (captureSettings.cameras || []).find((c) => c.id === id);
-        toast(`正在编辑 ${cam ? cam.name : id}`);
-      } catch (err) {
-        toast(err.message);
+    function renderRecords() {
+      const report = watchReport || { settings: {}, state: {}, today: { sessions: [] } };
+      const s = report.settings || {};
+      const today = report.today || { sessions: [] };
+      const q = $("q").value.trim().toLowerCase();
+      const all = today.sessions || [];
+      const matched = all.filter((row) => {
+        if (!q) return true;
+        const blob = (row.name || "") + " " + (row.names || []).join(" ") + " " + (row.start_ts || "");
+        return blob.toLowerCase().includes(q);
+      });
+      const alarmN = matched.filter((row) => row.alarm).length;
+      const liveN = matched.filter((row) => row.live).length;
+      const sessions = matched.filter((row) => {
+        if (recordsFilter === "alarm") return row.alarm;
+        if (recordsFilter === "live") return row.live;
+        return true;
+      });
+      const ranks = rankSessions(sessions);
+      const peopleN = rankSessions(all).length;
+      $("summary").textContent = today.date
+        ? `今天 ${today.date} · ${today.away_count || 0} 次离岗`
+        : "离岗记录";
+      const emptyCopy = q
+        ? "没有符合筛选的记录。"
+        : `上班时段里离开镜头超过 ${Number(s.away_s || 30)} 秒会按人记一笔。只冒一下头不算来过。工位上还有别人时，也会记这个人自己的离岗。客人不计入。`;
+      $("recordsPanel").innerHTML = `
+        <section class="watch-card records-hero">
+          <div class="watch-head">
+            <h3>今天 ${escapeHtml(today.date || "")}</h3>
+            <p class="hint" style="margin:0">离开镜头超过 ${Number(s.away_s || 30)} 秒记一笔；达到报警秒数会标成报警。</p>
+          </div>
+          <div class="stats">
+            <div class="stat"><span>离岗次数</span><b>${today.away_count || 0}</b></div>
+            <div class="stat"><span>累计离开</span><b>${escapeHtml(today.away_label || "0 秒")}</b></div>
+            <div class="stat danger"><span>报警次数</span><b>${today.alarm_count || 0}</b></div>
+            <div class="stat"><span>涉及人数</span><b>${peopleN}</b></div>
+          </div>
+        </section>
+        ${!all.length ? `
+          <section class="watch-card">
+            <div class="empty records-empty">
+              <strong>今天还没有离岗</strong>
+              <p style="margin:0">${emptyCopy}</p>
+            </div>
+          </section>
+        ` : `
+          <div class="records-body">
+            <section class="watch-card">
+              <h3>按人</h3>
+              ${ranks.length ? ranks.map((row, i) => `
+                <div class="rank" data-id="${escapeHtml(row.person_id || "")}">
+                  <span class="n">${i + 1}</span>
+                  ${personThumb(row)}
+                  <div>
+                    <strong>${escapeHtml(row.name || row.person_id || "")}</strong>
+                    <small>${row.away_count} 次${row.alarm_count ? " · 报警 " + row.alarm_count + " 次" : ""}${row.last_ts ? " · 最近 " + escapeHtml(row.last_ts) : ""}</small>
+                  </div>
+                  <strong>${escapeHtml(durationLabel(row.away_s))}</strong>
+                </div>
+              `).join("") : `<div class="empty" style="padding:28px 0">没有符合筛选的人。</div>`}
+            </section>
+            <section class="watch-card">
+              <div class="watch-head">
+                <h3>流水</h3>
+                <div class="records-filters">
+                  <button type="button" class="day ${recordsFilter === "all" ? "on" : ""}" data-filter="all">全部 ${matched.length}</button>
+                  <button type="button" class="day ${recordsFilter === "alarm" ? "on" : ""}" data-filter="alarm">报警 ${alarmN}</button>
+                  <button type="button" class="day ${recordsFilter === "live" ? "on" : ""}" data-filter="live">进行中 ${liveN}</button>
+                </div>
+              </div>
+              ${sessions.length ? sessions.map((row) => `
+                <div class="session ${row.alarm ? "is-alarm" : ""} ${row.live ? "is-live" : ""}" data-id="${escapeHtml(row.person_id || "")}">
+                  ${personThumb(row)}
+                  <div>
+                    <strong>${escapeHtml(row.name || (row.names && row.names[0]) || "未识别")}</strong>
+                    <small class="when">${escapeHtml(row.start_ts || "")} → ${escapeHtml(row.end_ts || "")}</small>
+                  </div>
+                  <div class="session-end">
+                    <b>${escapeHtml(row.duration || "")}</b>
+                    <span class="tag ${row.alarm ? "alarm" : (row.live ? "" : "off")}">${row.live ? "进行中" : (row.alarm ? "已报警" : "暂离")}</span>
+                  </div>
+                </div>
+              `).join("") : `<div class="empty" style="padding:36px 0">${q || recordsFilter !== "all" ? "没有符合筛选的记录。" : emptyCopy}</div>`}
+            </section>
+          </div>
+        `}
+      `;
+      for (const btn of $("recordsPanel").querySelectorAll("[data-filter]")) {
+        btn.onclick = () => {
+          recordsFilter = btn.dataset.filter || "all";
+          renderRecords();
+        };
+      }
+      for (const row of $("recordsPanel").querySelectorAll(".rank, .session[data-id]")) {
+        row.style.cursor = "pointer";
+        row.onclick = () => {
+          const id = row.dataset.id;
+          if (!id) return;
+          view = "people";
+          render();
+          openPerson(id);
+        };
       }
     }
 
-    async function toggleMonitor(id, on) {
-      const cameras = captureSettings.cameras || [];
-      const monitorIds = cameras.filter((cam) => (cam.id === id ? on : cam.monitor)).map((cam) => cam.id);
+    function currentCameras() {
+      return (captureSettings && captureSettings.cameras) || [];
+    }
+
+    function cameraById(id) {
+      return currentCameras().find((cam) => cam.id === id) || null;
+    }
+
+    function fillCameraForm(id) {
+      const cameras = currentCameras();
+      const adding = !id;
+      editingCameraId = adding ? "" : id;
+      const cam = adding ? { stream: "sub", port: 554, channel: 1, username: "admin" } : (cameraById(id) || cameras[0] || {});
+      if (!adding && cam.id) editingCameraId = cam.id;
+      const pick = $("capCamPick");
+      if (pick) pick.value = adding ? "" : (cam.id || "");
+      if ($("capCamId")) $("capCamId").value = adding ? "" : (cam.id || "");
+      if ($("capName")) $("capName").value = cam.name || "";
+      if ($("capHost")) $("capHost").value = cam.host || "";
+      if ($("capPort")) $("capPort").value = cam.port || 554;
+      if ($("capChannel")) $("capChannel").value = cam.channel || 1;
+      if ($("capUser")) $("capUser").value = cam.username || "admin";
+      if ($("capPass")) {
+        $("capPass").value = "";
+        $("capPass").placeholder = cam.has_password ? "已保存，留空不改" : "摄像机密码";
+      }
+      for (const btn of document.querySelectorAll("#streamPick .day")) {
+        btn.classList.toggle("on", btn.dataset.stream === (cam.stream || "sub"));
+      }
+      const removeBtn = $("removeCamera");
+      if (removeBtn) removeBtn.hidden = adding || !cameras.length;
+    }
+
+    function paintMonitorBar() {
+      const bar = $("monitorBar");
+      const chips = $("monitorChips");
+      const count = $("monitorCount");
+      if (!bar || !chips) return;
+      const cap = captureSettings || {};
+      const cameras = cap.cameras || [];
+      const rtsp = cap.source === "rtsp" && cameras.length > 0;
+      bar.hidden = !rtsp;
+      const onCount = cameras.filter((cam) => cam.monitor).length;
+      if (count) count.textContent = rtsp ? `监测 ${onCount} / ${cameras.length}` : "";
+      const key = `${cap.source || ""}|` + cameras.map((cam) => `${cam.id}:${cam.monitor ? 1 : 0}`).join(",");
+      if (key === monitorPaintKey && chips.childElementCount === cameras.length) return;
+      monitorPaintKey = key;
+      if (!rtsp) {
+        chips.innerHTML = "";
+        return;
+      }
+      chips.innerHTML = cameras.map((cam) => `
+        <button type="button" class="day ${cam.monitor ? "on" : ""}" data-id="${escapeHtml(cam.id)}" aria-pressed="${cam.monitor ? "true" : "false"}">${escapeHtml(cam.name || cam.host || cam.id)}</button>
+      `).join("");
+      for (const btn of chips.querySelectorAll(".day")) {
+        btn.onclick = () => toggleMonitor(btn.dataset.id);
+      }
+      const allBtn = $("monitorAll");
+      if (allBtn) allBtn.disabled = onCount === cameras.length;
+    }
+
+    async function setMonitorIds(ids, label) {
+      if (monitorBusy) return;
+      monitorBusy = true;
       try {
         captureSettings = await api("/api/capture", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: "rtsp", monitor_ids: monitorIds }),
+          body: JSON.stringify({ source: "rtsp", monitor_ids: ids }),
         });
-        render();
-        const names = (captureSettings.cameras || []).filter((cam) => cam.monitor).map((cam) => cam.name || cam.id);
-        toast(names.length ? `正在监测：${names.join("、")}` : "请至少勾选一路");
+        monitorPaintKey = "";
+        paintMonitorBar();
+        const cameras = captureSettings.cameras || [];
+        const n = cameras.filter((cam) => cam.monitor).length;
+        toast(label || `已监测 ${n} / ${cameras.length} 路`);
       } catch (err) {
         toast(err.message);
-        render();
+        monitorPaintKey = "";
+        paintMonitorBar();
+      } finally {
+        monitorBusy = false;
       }
+    }
+
+    function toggleMonitor(id) {
+      const cameras = currentCameras();
+      const cam = cameraById(id);
+      const next = cameras.filter((row) => (row.id === id ? !row.monitor : row.monitor)).map((row) => row.id);
+      const name = (cam && (cam.name || cam.id)) || id;
+      const turningOn = !(cam && cam.monitor);
+      setMonitorIds(next, turningOn ? `${name} 已加入监测` : `${name} 已关掉`);
     }
 
     function beginAddCamera() {
-      $("capCamId").value = "";
-      $("capName").value = "";
-      $("capHost").value = "";
-      $("capPort").value = 554;
-      $("capChannel").value = 1;
-      $("capUser").value = "admin";
-      $("capPass").value = "";
-      $("capPass").placeholder = "摄像机密码";
-      for (const btn of $("watchPanel").querySelectorAll("#streamPick .day")) {
-        btn.classList.toggle("on", btn.dataset.stream === "sub");
-      }
-      for (const btn of $("watchPanel").querySelectorAll(".cam-item[data-id]")) {
-        btn.classList.remove("on");
-      }
-      $("capName").focus();
+      fillCameraForm("");
+      if ($("capName")) $("capName").focus();
     }
 
     async function removeCamera() {
-      const id = $("capCamId").value;
+      const id = $("capCamId") && $("capCamId").value;
       if (!id) return toast("先选一路再删");
       if (!confirm("删除这路摄像机？")) return;
       try {
@@ -822,7 +1127,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ remove_camera_id: id }),
         });
+        editingCameraId = captureSettings.camera_id || "";
+        monitorPaintKey = "";
         render();
+        if (watchSettingsOpen) openWatchSettings();
         toast("已删除");
       } catch (err) {
         toast(err.message);
@@ -852,7 +1160,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
+        editingCameraId = captureSettings.camera_id || null;
+        monitorPaintKey = "";
         render();
+        if (watchSettingsOpen) openWatchSettings();
         toast(source === "rtsp" ? `已保存 ${captureSettings.cameras && captureSettings.cameras.length ? (captureSettings.cameras.find((c) => c.id === captureSettings.camera_id) || {}).name || "摄像机" : ""}，跟拍进程几秒内重连` : "已保存监测源");
       } catch (err) {
         toast(err.message);
@@ -872,6 +1183,7 @@
           }),
         });
         render();
+        if (watchSettingsOpen) openWatchSettings();
         toast("已保存上班时间");
       } catch (err) {
         toast(err.message);
@@ -896,9 +1208,18 @@
       return `${escapeHtml(twinName(p))}${twinPct(t)}`;
     }
 
+    function seatLabel(p) {
+      const seats = p.seats || [];
+      if (!seats.length) return "";
+      return seats.map((s) => s.camera_name || s.camera_id).join("、");
+    }
+
     function openPerson(id) {
       selected = people.find((p) => p.id === id);
       if (!selected) return;
+      watchSettingsOpen = false;
+      $("panel").classList.remove("settings");
+      $("btnWatchSettings").classList.remove("active");
       const p = selected;
       $("panel").innerHTML = `
         <div class="panel-head">
@@ -908,16 +1229,23 @@
           </div>
           <button class="ghost" type="button" id="close">关闭</button>
         </div>
-        ${p.photo_url ? `<img class="cover" src="${p.photo_url}?t=${encodeURIComponent(p.updated_at || "")}" alt="" />` : `<div class="cover" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">尚无相片，下次入镜会自动留底</div>`}
+        ${p.photo_url ? `<img class="cover" src="${p.photo_url}?t=${encodeURIComponent(p.updated_at || "")}" alt="" />` : `<div class="cover" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">尚无相片，监测认出后会自动留底</div>`}
         <label>姓名</label>
         <input id="name" type="text" value="${escapeHtml(p.name)}" />
         <label>备注</label>
         <textarea id="note" placeholder="例如：左边穿条纹衬衫">${escapeHtml(p.note || "")}</textarea>
+        <label>固定工位</label>
+        ${(p.seats || []).length ? (p.seats || []).map((s) => `
+          <div class="row" style="margin-bottom:8px">
+            <span class="hint" style="flex:1;margin:0">${escapeHtml(s.camera_name || s.camera_id)} · ${s.locked ? "已指定" : ((s.hits || 0) + " 次")}</span>
+            <button class="ghost" type="button" data-clear-seat="${escapeHtml(s.camera_id)}">清除</button>
+          </div>
+        `).join("") : `<p class="hint" style="margin-top:0">在「离岗分析」监测画面上点人框，即可把这个人登记到该路摄像头的位置。</p>`}
         <label class="check">
           <input type="checkbox" id="guest" ${p.guest ? "checked" : ""} />
           <span>客人（不计入离岗和报警统计）</span>
         </label>
-        <p class="hint">客人仍会出现在「在镜中」和入镜日志里，只是离岗分析会跳过。</p>
+        <p class="hint">客人仍会出现在监测画面里，只是离岗分析会跳过。</p>
         <div class="row">
           <button type="button" id="save">保存</button>
           <button class="ghost" type="button" id="refreshCover">设当前图为封面</button>
@@ -943,8 +1271,6 @@
           <button type="button" id="doMerge">并入</button>
         </div>
         <p class="hint">跟拍里侧脸对不上时以前会新开一档。以后会优先并回已有人物；这里仍可手动合并。</p>
-        <label>入镜日志</label>
-        <div id="personLog" class="log"><div class="hint">读取中…</div></div>
         <div class="row"><button class="danger" type="button" id="del">删除此人</button></div>
       `;
       $("drawer").classList.add("open");
@@ -954,42 +1280,20 @@
       $("file").onchange = uploadPhoto;
       $("doMerge").onclick = mergeInto;
       $("refreshCover").onclick = () => toast("点下面一张底片即可设为封面");
+      for (const btn of $("panel").querySelectorAll("[data-clear-seat]")) {
+        btn.onclick = () => clearSeat(p.id, btn.dataset.clearSeat);
+      }
       for (const img of $("snaps").querySelectorAll("img")) {
         img.onclick = () => setCover(img.dataset.name);
       }
-      loadPersonLog(p.id);
     }
 
     function closeDrawer() {
       $("drawer").classList.remove("open");
+      $("panel").classList.remove("settings");
+      $("btnWatchSettings").classList.remove("active");
+      watchSettingsOpen = false;
       selected = null;
-    }
-
-    async function loadPersonLog(id) {
-      const box = $("personLog");
-      if (!box) return;
-      try {
-        const rows = await api("/api/appear?person_id=" + encodeURIComponent(id) + "&limit=40");
-        if (!rows.length) {
-          box.innerHTML = `<div class="hint">还没有入镜记录</div>`;
-          return;
-        }
-        box.innerHTML = rows.map((v) => `
-          <div class="visit" style="grid-template-columns:1fr auto">
-            <div>
-              <strong>${escapeHtml(v.live ? "在镜中" : "已离镜")}</strong>
-              <small>${escapeHtml(v.start || "")}${v.end ? " → " + escapeHtml(v.end) : ""} · ${escapeHtml(v.duration || "")}</small>
-            </div>
-          </div>
-        `).join("");
-      } catch (err) {
-        box.innerHTML = `<div class="hint">${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    function isGuestId(id) {
-      const p = people.find((x) => x.id === id);
-      return !!(p && p.guest);
     }
 
     async function savePerson() {
@@ -1007,6 +1311,14 @@
       openPerson(updated.id);
     }
 
+    async function clearSeat(personId, cameraId) {
+      const qs = cameraId ? ("?camera_id=" + encodeURIComponent(cameraId)) : "";
+      const updated = await api("/api/people/" + personId + "/seats" + qs, { method: "DELETE" });
+      merge(updated);
+      toast("已清除工位，之后会重新学习");
+      openPerson(updated.id);
+    }
+
     async function deletePerson() {
       if (!selected || !confirm("删除 " + selected.name + " 以及全部相片？")) return;
       await api("/api/people/" + selected.id, { method: "DELETE" });
@@ -1017,21 +1329,22 @@
     }
 
     async function refreshPeople() {
-      const editingHours = view === "watch" && document.activeElement && $("watchPanel").contains(document.activeElement);
+      const editingSettings = watchSettingsOpen && document.activeElement && $("panel").contains(document.activeElement);
+      const pickingSeat = seatPickOpen();
       people = await api("/api/people");
-      if (view === "log") {
-        visits = await api("/api/appear?limit=200");
-      }
-      if (view === "watch") {
+      if (view === "watch" || view === "present" || view === "records") {
         watchReport = await api("/api/watch");
-        if (!editingHours) {
+        if (view === "watch" && !editingSettings && !pickingSeat) {
           try { captureSettings = await api("/api/capture"); } catch (_) {}
+          try { sceneState = { ...sceneState, ...(await api("/api/scene")) }; } catch (_) {}
+          try { mapState = { ...mapState, ...(await api("/api/map")) }; } catch (_) {}
+          try { mocapState = { ...mocapState, ...(await api("/api/mocap")) }; } catch (_) {}
         }
       }
       if (selected && !people.some((p) => p.id === selected.id)) {
         selected = null;
       }
-      if (!editingHours) render();
+      if (!editingSettings && !pickingSeat) render();
     }
 
     async function mergeInto() {
@@ -1085,6 +1398,9 @@
     }
 
     $("btnNew").onclick = () => {
+      watchSettingsOpen = false;
+      $("panel").classList.remove("settings");
+      $("btnWatchSettings").classList.remove("active");
       $("panel").innerHTML = `
         <div class="panel-head">
           <div>
@@ -1125,23 +1441,45 @@
       render();
     };
     $("q").oninput = render;
-    $("btnPresent").onclick = async () => {
-      view = "present";
-      try { present = await api("/api/present"); } catch (err) { toast(err.message); }
-      render();
-    };
-    $("btnLog").onclick = async () => {
-      view = "log";
-      try { visits = await api("/api/appear?limit=200"); } catch (err) { toast(err.message); }
-      render();
-    };
-    $("btnWatch").onclick = async () => {
+    async function openWatchView() {
       view = "watch";
       try {
         watchReport = await api("/api/watch");
         captureSettings = await api("/api/capture");
       } catch (err) { toast(err.message); }
       render();
+    }
+    async function openPresentView() {
+      view = "present";
+      try {
+        watchReport = await api("/api/watch");
+      } catch (err) { toast(err.message); }
+      render();
+    }
+    async function openRecordsView() {
+      view = "records";
+      try {
+        watchReport = await api("/api/watch");
+      } catch (err) { toast(err.message); }
+      render();
+    }
+    $("btnWatch").onclick = () => openWatchView();
+    $("btnPresent").onclick = () => openPresentView();
+    $("btnRecords").onclick = () => openRecordsView();
+    $("btnWatchSettings").onclick = () => {
+      if (watchSettingsOpen) closeDrawer();
+      else openWatchSettings();
+    };
+    $("monitorAll").onclick = () => {
+      const ids = currentCameras().map((cam) => cam.id);
+      if (!ids.length) return;
+      setMonitorIds(ids, `已监测 ${ids.length} / ${ids.length} 路`);
+    };
+    $("monitorInvert").onclick = () => {
+      const cameras = currentCameras();
+      const next = cameras.filter((cam) => !cam.monitor).map((cam) => cam.id);
+      if (!next.length) return toast("反选后会一路都不监测");
+      setMonitorIds(next);
     };
     $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeDrawer(); });
 
@@ -1216,27 +1554,331 @@
       pill.innerHTML = kind === "rtsp"
         ? `<i></i> 局域网 ${on ? "在线" : "离线"}`
         : `<i></i> Pocket 3 ${on ? "在线" : "离线"}`;
-      if (data.capture_settings) captureSettings = data.capture_settings;
+      if (data.capture_settings) {
+        captureSettings = data.capture_settings;
+        if (view === "watch") paintMonitorBar();
+      }
       const extra = (data.watch && data.watch.detail) ? ` · ${data.watch.detail}` : "";
       $("deviceDetail").textContent = (data.detail || "") + extra;
       paintStation(data.watch);
-      if (data.present) present = data.present;
+      if (data.scene) {
+        sceneState = { ...sceneState, ...data.scene };
+        paintScene(sceneState);
+      }
+      if (data.geomap) {
+        mapState = { ...mapState, ...data.geomap };
+        paintMap(mapState);
+      }
+      if (data.mocap) {
+        mocapState = { ...mocapState, ...data.mocap };
+        paintMocap(mocapState);
+      }
+      if (data.preview) latestPreview = data.preview;
       paintLive(data.preview);
-      const n = present.fresh ? (present.count || 0) : 0;
-      $("btnPresent").textContent = n ? `在镜中 ${n}` : "在镜中";
-      if (view === "present") renderPresent();
     }
     function paintLive(preview) {
-      const img = $("livePreview");
+      const grid = $("liveGrid");
       const empty = $("liveEmpty");
-      if (!img || !empty) return;
+      if (!grid || !empty) return;
+      const cameras = (preview && preview.cameras) || [];
       const fresh = !!(preview && preview.fresh);
-      empty.hidden = fresh;
-      img.classList.toggle("off", !fresh);
-      if (img.dataset.live !== "1") {
-        img.dataset.live = "1";
-        img.src = "/api/preview";
+      const ids = cameras.map((cam) => cam.id || "").filter(Boolean);
+      const key = ids.join("|") || (fresh ? "*" : "");
+      empty.hidden = fresh && (ids.length > 0 || key === "*");
+      if (grid.dataset.ids !== key) {
+        grid.dataset.ids = key;
+        for (const node of [...grid.querySelectorAll(".live-tile")]) node.remove();
+        const tiles = ids.length ? cameras.filter((cam) => cam.id) : (fresh ? [{ id: "", name: "监测" }] : []);
+        for (const cam of tiles) {
+          const tile = document.createElement("div");
+          tile.className = "live-tile";
+          const img = document.createElement("img");
+          img.alt = cam.name || cam.id || "监测画面";
+          img.src = cam.id ? "/api/preview/" + encodeURIComponent(cam.id) : "/api/preview";
+          img.addEventListener("click", (ev) => {
+            if (view !== "watch") return;
+            const pt = imageContentPoint(img, ev);
+            if (!pt) return;
+            const camNow = ((latestPreview.cameras || []).find((row) => row.id === cam.id)) || cam;
+            showSeatPick({
+              ...pt,
+              camera_id: cam.id || "",
+              camera_name: cam.name || camNow.name || "",
+              box: hitBox(camNow.boxes || cameraBoxes(cam.id), pt.nx, pt.ny),
+              clientX: ev.clientX,
+              clientY: ev.clientY,
+            });
+          });
+          tile.appendChild(img);
+          grid.appendChild(tile);
+        }
       }
+      for (const img of grid.querySelectorAll(".live-tile img")) {
+        img.classList.toggle("off", !fresh);
+      }
+    }
+    function paintScene(scene) {
+      const box = $("sceneNow");
+      if (!box) return;
+      const s = scene || {};
+      const lines = (s.cameras || []).filter((cam) => cam && cam.text && !cam.silent);
+      if (!s.enabled && !lines.length && !s.error) {
+        box.hidden = true;
+        box.innerHTML = "";
+        return;
+      }
+      if (s.error && !lines.length) {
+        box.hidden = false;
+        box.classList.add("warn");
+        box.innerHTML = `<small>场景理解</small>${escapeHtml(s.error)}`;
+        return;
+      }
+      if (!lines.length) {
+        box.hidden = !s.enabled;
+        box.classList.remove("warn");
+        box.innerHTML = s.enabled ? `<small>场景理解</small>已开启，等待第一句…` : "";
+        if (!s.enabled) box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      box.classList.remove("warn");
+      box.innerHTML = `<small>在干嘛</small>` + lines.map((cam) => {
+        const who = cam.name || cam.id || "";
+        return `${who ? escapeHtml(who) + " · " : ""}${escapeHtml(cam.text)}`;
+      }).join("<br />");
+    }
+    function paintMap(report) {
+      const box = $("mapNow");
+      if (!box) return;
+      const s = report || {};
+      const lines = (s.cameras || []).filter((cam) => cam && (cam.line || cam.ready || cam.warming));
+      if (!s.enabled && !lines.length && !s.error) {
+        box.hidden = true;
+        box.innerHTML = "";
+        return;
+      }
+      if (s.error && !lines.length) {
+        box.hidden = false;
+        box.classList.add("warn");
+        box.innerHTML = `<small>三维重建</small>${escapeHtml(s.error)}`;
+        return;
+      }
+      if (!lines.length) {
+        box.hidden = !s.enabled;
+        box.classList.remove("warn");
+        box.innerHTML = s.enabled ? `<small>三维重建</small>LingBot-Map 已开启，等待位姿…` : "";
+        if (!s.enabled) box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      box.classList.remove("warn");
+      box.innerHTML = `<small>三维重建</small>` + lines.map((cam) => {
+        const who = cam.name || cam.id || "";
+        const text = cam.line || (cam.warming ? "预热中" : "重建中");
+        return `${who ? escapeHtml(who) + " · " : ""}${escapeHtml(text)}`;
+      }).join("<br />");
+    }
+    function paintMocap(report) {
+      const box = $("mocapNow");
+      if (!box) return;
+      const s = report || {};
+      const lines = (s.cameras || []).filter((cam) => cam && cam.line);
+      if (!s.enabled && !lines.length && !s.error) {
+        box.hidden = true;
+        box.innerHTML = "";
+        return;
+      }
+      if (s.error && !lines.length) {
+        box.hidden = false;
+        box.classList.add("warn");
+        box.innerHTML = `<small>动作捕捉</small>${escapeHtml(s.error)}`;
+        return;
+      }
+      if (!lines.length) {
+        box.hidden = !s.enabled;
+        box.classList.remove("warn");
+        box.innerHTML = s.enabled ? `<small>动作捕捉</small>FreeMoCap 已开启，等待骨架…` : "";
+        if (!s.enabled) box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      box.classList.remove("warn");
+      box.innerHTML = `<small>动作捕捉</small>` + lines.map((cam) => {
+        const who = cam.name || cam.id || "";
+        return `${who ? escapeHtml(who) + " · " : ""}${escapeHtml(cam.line)}`;
+      }).join("<br />");
+    }
+    let seatClick = null;
+    function isComposingKey(ev) {
+      return !!(ev.isComposing || ev.keyCode === 229);
+    }
+    function seatPickOpen() {
+      const box = $("seatPick");
+      return !!(box && !box.hidden);
+    }
+    function hideSeatPick() {
+      const box = $("seatPick");
+      if (box) box.hidden = true;
+      seatClick = null;
+    }
+    function imageContentPoint(img, event) {
+      const rect = img.getBoundingClientRect();
+      const nw = img.naturalWidth || 0;
+      const nh = img.naturalHeight || 0;
+      if (!nw || !nh) return null;
+      const scale = Math.min(rect.width / nw, rect.height / nh);
+      const dw = nw * scale;
+      const dh = nh * scale;
+      const ox = rect.left + (rect.width - dw) / 2;
+      const oy = rect.top + (rect.height - dh) / 2;
+      const x = event.clientX - ox;
+      const y = event.clientY - oy;
+      if (x < 0 || y < 0 || x > dw || y > dh) return null;
+      return { nx: x / dw, ny: y / dh, px: event.clientX - rect.left, py: event.clientY - rect.top };
+    }
+    function hitBox(boxes, nx, ny) {
+      let best = null;
+      let bestArea = Infinity;
+      for (const box of boxes || []) {
+        const x1 = Number(box.x1);
+        const y1 = Number(box.y1);
+        const x2 = Number(box.x2);
+        const y2 = Number(box.y2);
+        if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+        const loX = Math.min(x1, x2);
+        const hiX = Math.max(x1, x2);
+        const loY = Math.min(y1, y2);
+        const hiY = Math.max(y1, y2);
+        if (nx < loX || nx > hiX || ny < loY || ny > hiY) continue;
+        const area = Math.max(1e-6, Math.abs(x2 - x1) * Math.abs(y2 - y1));
+        if (area < bestArea) {
+          best = box;
+          bestArea = area;
+        }
+      }
+      return best;
+    }
+    function cameraBoxes(cameraId) {
+      const cameras = (latestPreview && latestPreview.cameras) || [];
+      const cam = cameras.find((row) => row.id === cameraId);
+      return (cam && cam.boxes) || [];
+    }
+    function seatPinBody(extra) {
+      const body = seatClick && seatClick.camera_id
+        ? { camera_id: seatClick.camera_id, camera_name: seatClick.camera_name || "", cx: seatClick.nx, cy: seatClick.ny }
+        : { nx: seatClick.nx, ny: seatClick.ny };
+      if (seatClick && seatClick.box) {
+        body.x1 = seatClick.box.x1;
+        body.y1 = seatClick.box.y1;
+        body.x2 = seatClick.box.x2;
+        body.y2 = seatClick.box.y2;
+        body.cx = (Number(body.x1) + Number(body.x2)) / 2;
+        body.cy = (Number(body.y1) + Number(body.y2)) / 2;
+      }
+      return extra ? Object.assign(body, extra) : body;
+    }
+    async function pinExistingSeat(personId) {
+      if (!seatClick) return;
+      const updated = await api("/api/people/" + personId + "/seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(seatPinBody()),
+      });
+      merge(updated);
+      toast("已记下 " + updated.name + " 在这路摄像头的位置");
+      hideSeatPick();
+    }
+    async function createSeatMark(name) {
+      if (!seatClick) return;
+      const created = await api("/api/seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(seatPinBody({ name: name || "" })),
+      });
+      merge(created);
+      toast("已用画面里这个人登记 " + created.name);
+      hideSeatPick();
+    }
+    function showSeatPick(pt) {
+      const roster = people.filter((p) => !p.guest);
+      seatClick = pt;
+      const box = $("seatPick");
+      const list = $("seatPickList");
+      const q = $("seatPickQ");
+      const title = $("seatPickTitle");
+      const hint = $("seatPickHint");
+      if (!box || !list || !q) return;
+      const fromBox = !!(pt && pt.box);
+      const camName = (pt && (pt.camera_name || pt.camera_id)) || "";
+      if (title) title.textContent = fromBox ? "用画面里这个人登记" : "这里是谁的工位？";
+      if (hint) {
+        const labeled = pt && pt.box && pt.box.name ? `画面上标的是「${pt.box.name}」。` : "";
+        hint.hidden = !fromBox && !camName;
+        hint.textContent = fromBox
+          ? `${labeled}记下的是${camName ? "「" + camName + "」" : "这路摄像头"}上的位置。`
+          : (camName ? `点在「${camName}」上` : "");
+      }
+      const paint = () => {
+        const needle = (q.value || "").trim();
+        const lower = needle.toLowerCase();
+        const rows = roster.filter((p) => {
+          const hay = ((p.name || "") + " " + (p.note || "")).toLowerCase();
+          return !lower || hay.includes(lower);
+        });
+        const buttons = rows.map((p) => `<button type="button" data-id="${escapeHtml(p.id)}">${escapeHtml(p.name)}</button>`).join("");
+        let create = "";
+        if (fromBox) {
+          create = needle
+            ? `<button type="button" class="create" data-create="1">用这个人新建「${escapeHtml(needle)}」</button>`
+            : `<button type="button" class="create" data-create="1">用这个人新建</button>`;
+        } else if (needle) {
+          create = `<button type="button" class="create" data-create="1">新建「${escapeHtml(needle)}」</button>`;
+        } else {
+          create = `<p class="hint">${roster.length ? "点已有的人，或输入姓名新建标记" : "人物库还没人。输入姓名即可在这里新建工位标记。"}</p>`;
+        }
+        list.innerHTML = buttons + create;
+      };
+      q.value = "";
+      q.placeholder = fromBox ? "输入姓名，或直接新建" : "搜索或输入新姓名";
+      paint();
+      q.oninput = (ev) => { if (!ev.isComposing) paint(); };
+      q.oncompositionend = paint;
+      q.onkeydown = async (ev) => {
+        if (ev.key !== "Enter" || isComposingKey(ev)) return;
+        ev.preventDefault();
+        const name = (q.value || "").trim();
+        if (!name) return;
+        const exact = roster.find((p) => (p.name || "") === name) || null;
+        try {
+          if (exact) await pinExistingSeat(exact.id);
+          else await createSeatMark(name);
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+      list.onclick = async (ev) => {
+        if (!seatClick) return;
+        const createBtn = ev.target.closest("button[data-create]");
+        const btn = ev.target.closest("button[data-id]");
+        try {
+          if (createBtn) {
+            const name = (q.value || "").trim();
+            if (!name && !fromBox) return toast("先输入姓名");
+            await createSeatMark(name);
+            return;
+          }
+          if (!btn) return;
+          await pinExistingSeat(btn.dataset.id);
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+      box.hidden = false;
+      const left = Math.min((pt.clientX || 0) + 12, Math.max(8, window.innerWidth - 260));
+      const top = Math.min((pt.clientY || 0) + 12, Math.max(8, window.innerHeight - 200));
+      box.style.left = left + "px";
+      box.style.top = top + "px";
+      q.focus();
     }
     function paintGimbal(data) {
       const wifi = data.backend === "wifi";
@@ -1286,6 +1928,20 @@
     $("btnCam").onclick = () => setDockOpen(!$("dock").classList.contains("open"));
     $("btnCamClose").onclick = () => setDockOpen(false);
     window.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && !isComposingKey(ev) && seatPickOpen()) {
+        const q = $("seatPickQ");
+        if (q && document.activeElement === q && (q.value || "").trim()) {
+          q.value = "";
+          q.dispatchEvent(new Event("input"));
+          ev.preventDefault();
+          return;
+        }
+        hideSeatPick();
+      }
+      if (ev.key === "Escape" && watchSettingsOpen) {
+        closeDrawer();
+        return;
+      }
       if (ev.key === "Escape" && $("dock").classList.contains("open")) {
         setDockOpen(false);
         return;
@@ -1312,6 +1968,23 @@
     async function boot() {
       try {
         people = await api("/api/people");
+        if (location.hash === "#watch") {
+          view = "watch";
+          try {
+            watchReport = await api("/api/watch");
+            captureSettings = await api("/api/capture");
+          } catch (err) { toast(err.message); }
+        } else if (location.hash === "#present") {
+          view = "present";
+          try {
+            watchReport = await api("/api/watch");
+          } catch (err) { toast(err.message); }
+        } else if (location.hash === "#records") {
+          view = "records";
+          try {
+            watchReport = await api("/api/watch");
+          } catch (err) { toast(err.message); }
+        }
         render();
         paintDevice(await api("/api/status"));
         paintGimbal(await api("/api/gimbal"));

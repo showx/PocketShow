@@ -4,7 +4,11 @@ import logging
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from pocketshow.config import DetectConfig
+from pocketshow.seats import box_seat_dist, seat_search_boxes
 from pocketshow.types import Track
 
 logger = logging.getLogger(__name__)
@@ -38,42 +42,65 @@ def resolve_tracker(path: str) -> str:
     return path
 
 
-def box_iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+def box_area(box: tuple[float, float, float, float]) -> float:
+    x1, y1, x2, y2 = box
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def box_intersection(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
     ix1, iy1 = max(ax1, bx1), max(ay1, by1)
     ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    return max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+
+
+def box_iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    inter = box_intersection(a, b)
     if inter <= 0:
         return 0.0
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    union = area_a + area_b - inter
+    union = box_area(a) + box_area(b) - inter
     if union <= 0:
         return 0.0
     return inter / union
 
 
+def box_cover(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """小框被大框盖住的比例。头肩框套在全身框里时 IoU 往往不够高。"""
+    inter = box_intersection(a, b)
+    if inter <= 0:
+        return 0.0
+    smaller = min(box_area(a), box_area(b))
+    if smaller <= 0:
+        return 0.0
+    return inter / smaller
+
+
 def far_tile_windows(
     height: int,
     width: int,
-    ratio: float = 0.75,
+    ratio: float = 1.0,
     tiles: int = 2,
     overlap: float = 0.2,
+    rows: int = 2,
 ) -> list[tuple[int, int, int, int]]:
-    """画面上方远处带切成若干横向重叠窗口，让小人占更多推理像素。"""
-    y2 = max(1, min(height, int(round(height * max(0.2, min(1.0, ratio))))))
+    """把画面切成重叠窗口。默认整帧 2×2，近处坐着的人和远处小人都补得到。"""
+    y_limit = max(1, min(height, int(round(height * max(0.2, min(1.0, ratio))))))
     cols = max(1, int(tiles))
-    if cols == 1:
-        return [(0, 0, width, y2)]
+    row_n = max(1, int(rows))
     overlap = min(0.45, max(0.0, overlap))
     tile_w = width / cols
-    overlap_px = tile_w * overlap
+    tile_h = y_limit / row_n
+    overlap_x = tile_w * overlap
+    overlap_y = tile_h * overlap
     windows: list[tuple[int, int, int, int]] = []
-    for index in range(cols):
-        x1 = 0 if index == 0 else int(index * tile_w - overlap_px)
-        x2 = width if index == cols - 1 else int((index + 1) * tile_w + overlap_px)
-        windows.append((max(0, x1), 0, min(width, x2), y2))
+    for row in range(row_n):
+        y1 = 0 if row == 0 else int(row * tile_h - overlap_y)
+        y2 = y_limit if row == row_n - 1 else int((row + 1) * tile_h + overlap_y)
+        for col in range(cols):
+            x1 = 0 if col == 0 else int(col * tile_w - overlap_x)
+            x2 = width if col == cols - 1 else int((col + 1) * tile_w + overlap_x)
+            windows.append((max(0, x1), max(0, y1), min(width, x2), min(height, y2)))
     return windows
 
 
@@ -86,28 +113,66 @@ def shift_box(
     return (x1 + ox, y1 + oy, x2 + ox, y2 + oy)
 
 
+def boxes_overlap(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    *,
+    iou_thresh: float,
+    cover_thresh: float,
+) -> bool:
+    return box_iou(a, b) >= iou_thresh or box_cover(a, b) >= cover_thresh
+
+
 def unmatched_boxes(
     existing: list[tuple[float, float, float, float]],
     candidates: list[tuple[tuple[float, float, float, float], float]],
     iou_thresh: float = 0.35,
+    cover_thresh: float = 0.62,
 ) -> list[tuple[tuple[float, float, float, float], float]]:
     out: list[tuple[tuple[float, float, float, float], float]] = []
     for box, conf in candidates:
-        if all(box_iou(box, other) < iou_thresh for other in existing):
+        if all(not boxes_overlap(box, other, iou_thresh=iou_thresh, cover_thresh=cover_thresh) for other in existing):
             out.append((box, conf))
     return out
 
 
 def nms_boxes(
     candidates: list[tuple[tuple[float, float, float, float], float]],
-    iou_thresh: float = 0.55,
+    iou_thresh: float = 0.4,
+    cover_thresh: float = 0.62,
 ) -> list[tuple[tuple[float, float, float, float], float]]:
-    ordered = sorted(candidates, key=lambda item: item[1], reverse=True)
+    ordered = sorted(candidates, key=lambda item: (box_area(item[0]), item[1]), reverse=True)
     kept: list[tuple[tuple[float, float, float, float], float]] = []
     for box, conf in ordered:
-        if all(box_iou(box, other) < iou_thresh for other, _ in kept):
+        if all(not boxes_overlap(box, other, iou_thresh=iou_thresh, cover_thresh=cover_thresh) for other, _ in kept):
             kept.append((box, conf))
     return kept
+
+
+def crop_imgsz(height: int, width: int, cap: int = 1280) -> int:
+    """远景切块：小窗不要硬拉到整帧的 1280。"""
+    side = max(int(height), int(width))
+    cap = max(320, int(cap or 640))
+    target = max(320, min(cap, side * 2))
+    return max(32, int(round(target / 32) * 32))
+
+
+def enhance_crop(image: np.ndarray) -> np.ndarray:
+    """坐姿小窗对比度差，CLAHE 后再检。"""
+    if image is None or image.size == 0 or image.ndim != 3:
+        return image
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lightness, a_ch, b_ch = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    return cv2.cvtColor(cv2.merge((clahe.apply(lightness), a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+
+
+def seat_crop_imgsz(height: int, width: int, cap: int = 1280) -> int:
+    """坐姿补检要把几十像素的头肩拉到至少 640，否则 YOLO 当椅子。"""
+    side = max(int(height), int(width))
+    cap = max(640, int(cap or 640))
+    target = max(640, min(cap, max(side * 6, 640)))
+    return max(32, int(round(target / 32) * 32))
 
 
 def associate_by_iou(
@@ -179,15 +244,50 @@ class PersonTracker:
         self._extra_boxes: dict[int, tuple[float, float, float, float]] = {}
         self._extra_miss: dict[int, int] = {}
         self._extra_next_id = EXTRA_ID_BASE
+        self._seat_hold: dict[str, tuple[tuple[float, float, float, float], float, float]] = {}
 
-    def track(self, frame) -> list[Track]:
+    def track(self, frame, regions: list[dict] | None = None) -> list[Track]:
         now = time.monotonic()
         tracks = self._track_full(frame, now)
+        extras: list[tuple[tuple[float, float, float, float], float]] = []
         if self._far_model is not None:
-            extras = self._detect_far(frame)
+            extras.extend(self._detect_far(frame))
+        occupied = [t.bbox_xyxy for t in tracks] + [box for box, _ in extras]
+        pending = self._empty_seat_regions(frame, occupied, regions or [])
+        extras.extend(self._detect_regions(frame, pending))
+        if extras:
             extras = unmatched_boxes([t.bbox_xyxy for t in tracks], extras)
-            tracks.extend(self._update_extras(extras, now))
+            extras = nms_boxes(extras)
+            tracks.extend(self._dedupe_extras(self._update_extras(extras, now), tracks))
         return tracks
+
+    def _empty_seat_regions(
+        self,
+        frame,
+        occupied: list[tuple[float, float, float, float]],
+        regions: list[dict],
+    ) -> list[dict]:
+        if not regions:
+            return []
+        h, w = frame.shape[:2]
+        empty: list[dict] = []
+        for seat in regions:
+            if any(box_seat_dist(seat, box, w, h) <= 1.25 for box in occupied):
+                continue
+            empty.append(seat)
+        return empty
+
+    def _dedupe_extras(self, extras: list[Track], tracks: list[Track]) -> list[Track]:
+        existing = [t.bbox_xyxy for t in tracks]
+        kept: list[Track] = []
+        for track in sorted(extras, key=lambda item: (box_area(item.bbox_xyxy), item.conf), reverse=True):
+            if any(boxes_overlap(track.bbox_xyxy, box, iou_thresh=0.4, cover_thresh=0.62) for box in existing):
+                self._extra_boxes.pop(track.id, None)
+                self._extra_miss.pop(track.id, None)
+                continue
+            kept.append(track)
+            existing.append(track.bbox_xyxy)
+        return kept
 
     def _track_full(self, frame, now: float) -> list[Track]:
         results = self.model.track(
@@ -243,12 +343,22 @@ class PersonTracker:
         self._prev = seen
         return tracks
 
+    def _crop_imgsz(self, crop) -> int:
+        return crop_imgsz(crop.shape[0], crop.shape[1], self.cfg.imgsz)
+
     def _detect_far(self, frame) -> list[tuple[tuple[float, float, float, float], float]]:
         assert self._far_model is not None
         h, w = frame.shape[:2]
         found: list[tuple[tuple[float, float, float, float], float]] = []
         min_h = self.cfg.min_height
-        for x1, y1, x2, y2 in far_tile_windows(h, w, self.cfg.far_ratio, self.cfg.far_tiles, self.cfg.tile_overlap):
+        for x1, y1, x2, y2 in far_tile_windows(
+            h,
+            w,
+            self.cfg.far_ratio,
+            self.cfg.far_tiles,
+            self.cfg.tile_overlap,
+            self.cfg.far_rows,
+        ):
             crop = frame[y1:y2, x1:x2]
             if crop.size == 0:
                 continue
@@ -257,7 +367,7 @@ class PersonTracker:
                 classes=[PERSON_CLASS],
                 conf=self.cfg.conf,
                 iou=self.cfg.iou,
-                imgsz=self.cfg.imgsz,
+                imgsz=self._crop_imgsz(crop),
                 device=self.device,
                 verbose=False,
                 save=False,
@@ -273,6 +383,67 @@ class PersonTracker:
                 found.append((box, float(conf)))
         return nms_boxes(found)
 
+    def _detect_regions(self, frame, regions: list[dict]) -> list[tuple[tuple[float, float, float, float], float]]:
+        """对指定工位窗口再检一次，坐着被桌子挡住的人整帧经常漏。"""
+        if not regions:
+            return []
+        h, w = frame.shape[:2]
+        model = self._far_model or self.model
+        conf = min(float(self.cfg.conf), 0.08)
+        min_h = max(16, int(self.cfg.min_height))
+        min_w = 12.0
+        min_area = 280.0
+        found: list[tuple[tuple[float, float, float, float], float]] = []
+        now = time.monotonic()
+        for seat in regions:
+            key = str(seat.get("person_id") or "") or f"{float(seat.get('cx') or 0):.3f}:{float(seat.get('cy') or 0):.3f}"
+            hit: tuple[tuple[float, float, float, float], float] | None = None
+            for window in seat_search_boxes(seat):
+                x1 = int(window["x1"] * w)
+                y1 = int(window["y1"] * h)
+                x2 = int(window["x2"] * w)
+                y2 = int(window["y2"] * h)
+                if x2 - x1 < 16 or y2 - y1 < 16:
+                    continue
+                crop = frame[y1:y2, x1:x2]
+                if crop.size == 0:
+                    continue
+                results = model.predict(
+                    enhance_crop(crop),
+                    classes=[PERSON_CLASS],
+                    conf=conf,
+                    iou=self.cfg.iou,
+                    imgsz=seat_crop_imgsz(crop.shape[0], crop.shape[1], self.cfg.imgsz),
+                    device=self.device,
+                    verbose=False,
+                    save=False,
+                )
+                if not results or results[0].boxes is None or len(results[0].boxes) == 0:
+                    continue
+                xyxy = results[0].boxes.xyxy.cpu().numpy()
+                confs = results[0].boxes.conf.cpu().numpy()
+                for bbox, score in zip(xyxy, confs):
+                    box = shift_box((float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), (x1, y1))
+                    bw = max(0.0, box[2] - box[0])
+                    bh = max(0.0, box[3] - box[1])
+                    if bh < min_h or bw < min_w or bw * bh < min_area:
+                        continue
+                    if box_seat_dist(seat, box, w, h) > 1.45:
+                        continue
+                    cand = (box, float(score))
+                    if hit is None or cand[1] > hit[1]:
+                        hit = cand
+            if hit is not None:
+                self._seat_hold[key] = (hit[0], hit[1], now)
+                found.append(hit)
+            else:
+                held = self._seat_hold.get(key)
+                if held is not None and now - held[2] <= 3.0:
+                    found.append((held[0], held[1]))
+                elif held is not None:
+                    self._seat_hold.pop(key, None)
+        return found
+
     def _update_extras(
         self,
         detections: list[tuple[tuple[float, float, float, float], float]],
@@ -282,6 +453,7 @@ class PersonTracker:
             self._extra_boxes,
             detections,
             next_id=self._extra_next_id,
+            max_miss=20,
             misses=self._extra_miss,
         )
         tracks: list[Track] = []

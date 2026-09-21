@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from pocketshow.seats import pick_seat
 from pocketshow.types import FollowCommand, Track
 
 _FONT_CANDIDATES = [
@@ -47,6 +48,66 @@ def _draw_texts(
     return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
 
 
+def _hud_chunks(text: str, width: int = 34) -> list[str]:
+    text = " ".join((text or "").split())
+    if not text:
+        return []
+    if len(text) <= width:
+        return [text]
+    first, rest = text[:width], text[width:]
+    if len(rest) <= width:
+        return [first, rest]
+    return [first, rest[: width - 1] + "…"]
+
+
+_SKEL = (90, 190, 210)
+_BONES = [
+    ("left_shoulder", "right_shoulder"),
+    ("left_shoulder", "left_elbow"),
+    ("left_elbow", "left_wrist"),
+    ("right_shoulder", "right_elbow"),
+    ("right_elbow", "right_wrist"),
+    ("left_shoulder", "left_hip"),
+    ("right_shoulder", "right_hip"),
+    ("left_hip", "right_hip"),
+    ("left_hip", "left_knee"),
+    ("left_knee", "left_ankle"),
+    ("right_hip", "right_knee"),
+    ("right_knee", "right_ankle"),
+    ("nose", "left_eye"),
+    ("nose", "right_eye"),
+    ("left_eye", "left_ear"),
+    ("right_eye", "right_ear"),
+    ("nose", "left_shoulder"),
+    ("nose", "right_shoulder"),
+]
+
+
+def _draw_skeleton(vis: np.ndarray, track: Track, width: int, height: int) -> None:
+    points: dict[str, tuple[int, int]] = {}
+    for item in track.keypoints or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            conf = float(item.get("conf") if item.get("conf") is not None else 1.0)
+            if conf < 0.25:
+                continue
+            u, v = float(item["u"]), float(item["v"])
+            name = str(item.get("name") or "")
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not name:
+            continue
+        points[name] = (int(u * width), int(v * height))
+    for a, b in _BONES:
+        pa, pb = points.get(a), points.get(b)
+        if pa is None or pb is None:
+            continue
+        cv2.line(vis, pa, pb, _SKEL, 1, cv2.LINE_AA)
+    for pt in points.values():
+        cv2.circle(vis, pt, 2, _SKEL, -1, cv2.LINE_AA)
+
+
 def draw_overlay(
     frame: np.ndarray,
     tracks: list[Track],
@@ -58,8 +119,12 @@ def draw_overlay(
     locked_name: str | None = None,
     control_mode: str = "跟拍",
     watch_line: str = "",
+    scene_line: str = "",
+    map_line: str = "",
+    mocap_line: str = "",
     title: str = "",
     monitor: bool = False,
+    seats: list[dict] | None = None,
 ) -> np.ndarray:
     vis = frame.copy()
     h, w = vis.shape[:2]
@@ -78,6 +143,7 @@ def draw_overlay(
         color = cream if is_target else mute
         thickness = 2 if is_target else 1
         cv2.rectangle(vis, (x1, y1), (x2, y2), color, thickness)
+        _draw_skeleton(vis, track, w, h)
         if track.face_bbox is not None:
             fx1, fy1, fx2, fy2 = (int(v) for v in track.face_bbox)
             face_color = (168, 96, 210) if track.live is False else (140, 190, 90)
@@ -89,7 +155,42 @@ def draw_overlay(
             name = track.label
             if track.person_name and track.face_score > 0:
                 name = f"{track.person_name} {track.face_score:.2f}"
+            if track.activity:
+                name = f"{name} {track.activity}"
         texts.append((name, (x1, max(8, y1 - 26)), color, 20))
+
+    occupied = {track.person_id for track in tracks if track.person_id}
+    used = set(occupied)
+    for track in tracks:
+        if track.person_id:
+            continue
+        picked = pick_seat(
+            0.0,
+            0.0,
+            seats or [],
+            used,
+            bbox=track.bbox_xyxy,
+            width=w,
+            height=h,
+        )
+        if picked is None:
+            continue
+        pid = str(picked.get("person_id") or "")
+        if pid:
+            occupied.add(pid)
+            used.add(pid)
+    for seat in seats or []:
+        sx = int(float(seat.get("cx") or 0) * w)
+        sy = int(float(seat.get("cy") or 0) * h)
+        ax = max(10, int(float(seat.get("rx") or 0.05) * w))
+        ay = max(12, int(float(seat.get("ry") or 0.1) * h))
+        taken = seat.get("person_id") in occupied
+        color = cream if taken else (110, 110, 110)
+        cv2.ellipse(vis, (sx, sy), (ax, ay), 0, 0, 360, color, 1)
+        if not taken:
+            label = str(seat.get("name") or "")
+            if label:
+                texts.append((label, (max(8, sx - 20), max(8, sy - ay - 18)), color, 14))
 
     if not monitor and command.target_id is not None:
         tx = int((0.5 + command.error.ex) * w)
@@ -97,7 +198,9 @@ def draw_overlay(
         cv2.arrowedLine(vis, (cx, cy), (tx, ty), cream, 2, tipLength=0.12)
 
     if monitor:
-        hud = [title or "监测", f"{len(tracks)} 人", watch_line] if watch_line else [title or "监测", f"{len(tracks)} 人"]
+        hud = [title or "监测", f"{len(tracks)} 人"]
+        if watch_line:
+            hud.append(watch_line)
     else:
         status = "LOST" if command.lost else "LOCK"
         who = locked_name or (str(locked_id) if locked_id is not None else "-")
@@ -110,9 +213,13 @@ def draw_overlay(
         if watch_line:
             hud.append(watch_line)
         hud.append("点选锁定  e登记人脸  n/p切换  c自动  q退出")
+    hud.extend(_hud_chunks(scene_line))
+    hud.extend(_hud_chunks(map_line))
+    hud.extend(_hud_chunks(mocap_line))
     plate = vis.copy()
     hud_h = 12 + 22 * len(hud) + 8
-    hud_w = min(w - 12, 540)
+    extra = scene_line or map_line or mocap_line
+    hud_w = min(w - 12, 680 if extra else 540)
     cv2.rectangle(plate, (8, 6), (hud_w, hud_h), (16, 16, 16), -1)
     vis = cv2.addWeighted(plate, 0.42, vis, 0.58, 0)
     y = 12

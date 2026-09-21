@@ -53,18 +53,29 @@ class DetectConfig(BaseModel):
     tracker: str = "bytetrack.yaml"
     min_height: int = 12
     far_pass: bool = True
-    far_ratio: float = 0.75
+    far_ratio: float = 1.0
     far_tiles: int = 2
+    far_rows: int = 2
     tile_overlap: float = 0.2
 
 
 class RecognizeConfig(BaseModel):
     enabled: bool = True
-    match_threshold: float = 0.43
-    soft_threshold: float = 0.38
+    match_threshold: float = 0.50
+    soft_threshold: float = 0.42
+    match_margin: float = 0.06
     dup_threshold: float = 0.70
     det_score: float = 0.5
     det_min_face: int = 12
+    match_min_face: int = 18
+    match_min_score: float = 0.52
+    match_max_yaw: float = 0.72
+    id_min_face: int = 28
+    id_min_score: float = 0.65
+    id_max_yaw: float = 0.50
+    id_confirm: int = 2
+    update_min_sim: float = 0.55
+    template_collide: float = 0.55
     enroll_score: float = 0.88
     enroll_min_face: int = 36
     enroll_confirm: int = 18
@@ -75,6 +86,16 @@ class RecognizeConfig(BaseModel):
     liveness_min_face: int = 40
     gallery: str = "data/faces.json"
     photos: str = "data/faces"
+    seats: bool = True
+    seat_min_hits: int = 3
+    seat_confirm: int = 2
+    reid: bool = True
+    reid_threshold: float = 0.48
+    reid_soft: float = 0.38
+    reid_margin: float = 0.08
+    reid_update: float = 0.50
+    reid_collide: float = 0.58
+    reid_min_height: int = 24
 
 
 class FollowConfig(BaseModel):
@@ -118,6 +139,54 @@ class WatchConfig(BaseModel):
     log: str = "data/away.jsonl"
 
 
+class SceneConfig(BaseModel):
+    enabled: bool = False
+    backend: Literal["moss-vl", "openai", "stub"] = "openai"
+    protocol: Literal["auto", "hf", "sglang"] = "auto"
+    base_url: str = "http://127.0.0.1:30000/v1"
+    ws_url: str = "ws://127.0.0.1:8000/v1/realtime"
+    api_key: str = ""
+    model: str = "OpenMOSS-Team/MOSS-VL-Realtime"
+    interval_s: float = 8.0
+    sample_fps: float = 1.0
+    gap_s: float = 2.0
+    timeout_s: float = 25.0
+    max_width: int = 768
+    jpeg_quality: int = 70
+    max_tokens: int = 80
+    max_tokens_per_second: float = 12.0
+    prompt: str = ""
+    system_prompt: str = ""
+    log: str = "data/scene.jsonl"
+    status: str = "data/scene.json"
+
+
+class MapConfig(BaseModel):
+    enabled: bool = False
+    backend: Literal["http", "stub"] = "http"
+    base_url: str = "http://127.0.0.1:8090"
+    camera_id: str = ""
+    interval_s: float = 0.5
+    timeout_s: float = 8.0
+    max_width: int = 640
+    jpeg_quality: int = 80
+    log: str = "data/map.jsonl"
+    status: str = "data/map.json"
+
+
+class MocapConfig(BaseModel):
+    enabled: bool = False
+    backend: Literal["http", "stub"] = "http"
+    base_url: str = "http://127.0.0.1:8006"
+    camera_id: str = ""
+    interval_s: float = 0.4
+    timeout_s: float = 6.0
+    max_width: int = 640
+    jpeg_quality: int = 75
+    log: str = "data/mocap.jsonl"
+    status: str = "data/mocap.json"
+
+
 class Settings(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     detect: DetectConfig = Field(default_factory=DetectConfig)
@@ -127,6 +196,9 @@ class Settings(BaseModel):
     wifi: WifiConfig = Field(default_factory=WifiConfig)
     rtsp: RtspConfig = Field(default_factory=RtspConfig)
     watch: WatchConfig = Field(default_factory=WatchConfig)
+    scene: SceneConfig = Field(default_factory=SceneConfig)
+    geomap: MapConfig = Field(default_factory=MapConfig)
+    mocap: MocapConfig = Field(default_factory=MocapConfig)
     preview: str = "data/preview.jpg"
 
 

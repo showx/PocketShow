@@ -17,13 +17,22 @@ def test_box_iou_identical_and_disjoint():
 
 
 def test_far_tile_windows_cover_upper_band():
-    windows = far_tile_windows(1000, 1920, ratio=0.75, tiles=2, overlap=0.2)
+    windows = far_tile_windows(1000, 1920, ratio=0.75, tiles=2, overlap=0.2, rows=1)
     assert len(windows) == 2
     assert windows[0][1] == 0 and windows[1][1] == 0
     assert windows[0][3] == 750 and windows[1][3] == 750
     assert windows[0][0] == 0
     assert windows[1][2] == 1920
     assert windows[0][2] > windows[1][0]
+
+
+def test_far_tile_windows_full_grid():
+    windows = far_tile_windows(1000, 1920)
+    assert len(windows) == 4
+    assert windows[0][0] == 0 and windows[0][1] == 0
+    assert windows[-1][2] == 1920 and windows[-1][3] == 1000
+    assert windows[2][1] > 0
+    assert windows[1][0] > 0
 
 
 def test_shift_and_unmatched():
@@ -34,6 +43,14 @@ def test_shift_and_unmatched():
     far = ((200.0, 20.0, 230.0, 90.0), 0.4)
     leftover = unmatched_boxes(existing, [near, far], iou_thresh=0.3)
     assert leftover == [far]
+
+
+def test_nms_drops_contained_head_box():
+    body = ((0.8306, 0.5629, 0.9410, 0.8283), 0.55)
+    head = ((0.8451, 0.5603, 0.9398, 0.7291), 0.62)
+    kept = nms_boxes([head, body])
+    assert len(kept) == 1
+    assert kept[0][0] == body[0]
 
 
 def test_nms_keeps_higher_score():
@@ -67,3 +84,13 @@ def test_resolve_tracker_uses_bundled_yaml():
     assert Path(path).name == "bytetrack.yaml"
     assert Path(path).is_file()
     assert Path(path).parent.name == "pocketshow"
+
+
+def test_crop_imgsz_stays_near_window():
+    from pocketshow.detect_track import crop_imgsz, seat_crop_imgsz
+
+    assert crop_imgsz(180, 320, cap=1280) == 640
+    assert crop_imgsz(191, 167, cap=1280) == 384
+    assert crop_imgsz(720, 1280, cap=1280) == 1280
+    assert seat_crop_imgsz(108, 103, cap=1280) >= 640
+    assert seat_crop_imgsz(120, 110, cap=1280) >= 640

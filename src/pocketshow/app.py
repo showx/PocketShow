@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,12 +16,15 @@ from pocketshow.capture import (
     FrameSource,
     capture_identity,
     compose_grid,
-    grid_cell_size,
     looks_like_pocket,
+    native_mosaic_size,
     open_capture,
     open_rtsp_many,
     pane_index,
+    pane_source_xy,
     redact_rtsp_url,
+    reopen_rtsp,
+    should_reconnect,
     try_open_pocket,
 )
 from pocketshow.config import Settings, load_settings
@@ -28,10 +32,14 @@ from pocketshow.control import GimbalBus, mix_command
 from pocketshow.detect_track import PersonTracker
 from pocketshow.follow import FollowController
 from pocketshow.gimbal.stub import StubGimbal
+from pocketshow.geomap import SceneMapper
+from pocketshow.mocap import MocapClient
 from pocketshow.overlay import draw_overlay
 from pocketshow.pocket3.udp import DjiUdpClient
 from pocketshow.preview import PreviewHub
 from pocketshow.recognize import PersonRecognizer
+from pocketshow.scene import SceneNarrator
+from pocketshow.seats import boxes_from_tracks
 from pocketshow.target import TargetLock
 from pocketshow.types import FollowCommand, FrameError, Track
 from pocketshow.watch import StationWatch, hud_line
@@ -39,16 +47,6 @@ from pocketshow.watch import StationWatch, hud_line
 logger = logging.getLogger("pocketshow")
 WINDOW = "PocketShow"
 TRACK_ID_GAP = 100000
-
-
-def preview_canvas(window: str = WINDOW) -> tuple[int, int]:
-    try:
-        rect = cv2.getWindowImageRect(window)
-        if rect is not None and len(rect) >= 4 and int(rect[2]) >= 320 and int(rect[3]) >= 240:
-            return int(rect[2]), int(rect[3])
-    except Exception:
-        pass
-    return 1920, 1080
 
 
 @dataclass
@@ -62,6 +60,8 @@ class CameraView:
     miss: int = 0
     tracks: list[Track] = field(default_factory=list)
     frame: np.ndarray | None = None
+    pending: np.ndarray | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -168,6 +168,72 @@ def close_camera_views(views: list[CameraView]) -> None:
         view.capture.close()
 
 
+def _push_frame(view: CameraView, frame: np.ndarray) -> None:
+    with view.lock:
+        view.frame = frame
+        view.pending = frame
+        view.miss = 0
+
+
+def _display_snapshot(view: CameraView) -> tuple[np.ndarray | None, list[Track], int | None]:
+    with view.lock:
+        return view.frame, list(view.tracks), view.locker.locked_id
+
+
+def _take_pending(view: CameraView) -> np.ndarray | None:
+    with view.lock:
+        frame = view.pending
+        view.pending = None
+        return frame
+
+
+def _store_tracks(view: CameraView, tracks: list[Track], dt: float) -> None:
+    with view.lock:
+        view.tracks = tracks
+        view.locker.update(tracks, dt)
+
+
+def _analyze_view(
+    view: CameraView,
+    recognizer: PersonRecognizer | None,
+    scene: SceneNarrator | None,
+    mapper: SceneMapper | None,
+    mocap: MocapClient | None,
+    gate: threading.Lock,
+    dt: float,
+) -> bool:
+    frame = _take_pending(view)
+    if frame is None:
+        return False
+    tracks = view.tracker.track(
+        frame,
+        regions=recognizer.seats_for(view.cam_id) if recognizer is not None and recognizer.cfg.seats else None,
+    )
+    for track in tracks:
+        track.id += view.offset
+    if mapper is not None:
+        mapper.annotate(tracks, view.cam_id)
+    if mocap is not None:
+        mocap.annotate(tracks, view.cam_id)
+    if recognizer is not None:
+        with gate:
+            tracks = recognizer.apply(
+                frame,
+                tracks,
+                tick_appear=False,
+                camera_id=view.cam_id,
+                camera_name=view.name,
+            )
+    _store_tracks(view, tracks, dt)
+    if mapper is not None:
+        mapper.offer(frame, tracks, camera_id=view.cam_id, camera_name=view.name)
+    if mocap is not None:
+        mocap.offer(frame, tracks, camera_id=view.cam_id, camera_name=view.name)
+    if scene is not None:
+        scene.offer(frame, tracks, camera_id=view.cam_id, camera_name=view.name)
+    return True
+
+
 def run_rtsp_monitor(
     args: argparse.Namespace,
     settings: Settings,
@@ -179,45 +245,94 @@ def run_rtsp_monitor(
     recognizer: PersonRecognizer | None,
     only_id: str | None,
     preview: PreviewHub,
+    scene: SceneNarrator | None = None,
+    mapper: SceneMapper | None = None,
+    mocap: MocapClient | None = None,
 ) -> int:
     views = open_camera_views(store, settings, only_id)
     idle = _idle_command()
     latest: dict[str, list[Track]] = {"tracks": []}
     focus = 0
-    layout = {"canvas": (1920, 1080)}
+    layout = {"canvas": (1280, 720)}
+    ctl: dict = {"views": views, "stop": threading.Event()}
+    gate = threading.Lock()
     if not args.no_preview:
-        cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW, 1920, 1080)
+        cv2.namedWindow(WINDOW, cv2.WINDOW_AUTOSIZE)
 
         def on_mouse(event, x, y, _flags, _param) -> None:
             nonlocal focus
-            if event != cv2.EVENT_LBUTTONDOWN or not views:
+            live = ctl["views"]
+            if event != cv2.EVENT_LBUTTONDOWN or not live:
                 return
             canvas = layout["canvas"]
-            index = pane_index(x, y, len(views), canvas)
+            index = pane_index(x, y, len(live), canvas)
             if index is None:
                 return
             focus = index
-            view = views[index]
-            if view.frame is None:
+            view = live[index]
+            with view.lock:
+                frame = view.frame
+                tracks = list(view.tracks)
+            if frame is None:
                 return
-            cell_w, cell_h = grid_cell_size(len(views), canvas)
-            local_x = x % cell_w
-            local_y = y % cell_h
-            vh, vw = view.frame.shape[:2]
-            ox = int(local_x * vw / max(cell_w, 1))
-            oy = int(local_y * vh / max(cell_h, 1))
-            locked = view.locker.lock_at(ox, oy, view.tracks)
+            vh, vw = frame.shape[:2]
+            hit = pane_source_xy(x, y, len(live), canvas, vw, vh)
+            if hit is None:
+                return
+            with view.lock:
+                locked = view.locker.lock_at(hit[1], hit[2], tracks)
             if locked is not None:
-                name = next((t.person_name for t in view.tracks if t.id == locked), None)
+                name = next((t.person_name for t in tracks if t.id == locked), None)
                 logger.info("锁定 %s ID %s %s", view.name, locked, name or "")
 
         cv2.setMouseCallback(WINDOW, on_mouse)
 
+    def analyze_loop() -> None:
+        prev_analyze = time.monotonic()
+        while not ctl["stop"].is_set():
+            batch: list[CameraView] = ctl["views"]
+            now = time.monotonic()
+            dt = max(1e-3, now - prev_analyze)
+            prev_analyze = now
+            groups: list[list[Track]] = []
+            worked = False
+            try:
+                for view in batch:
+                    if ctl["stop"].is_set():
+                        return
+                    try:
+                        if _analyze_view(view, recognizer, scene, mapper, mocap, gate, dt):
+                            worked = True
+                    except Exception:
+                        logger.exception("识别 %s 失败", view.name)
+                    with view.lock:
+                        groups.append(list(view.tracks))
+                if recognizer is not None and worked:
+                    with gate:
+                        recognizer.flush_appear(groups)
+            except Exception:
+                logger.exception("识别线程异常")
+                ctl["stop"].wait(0.2)
+                continue
+            if not worked:
+                ctl["stop"].wait(0.01)
+
+    def start_analyze() -> threading.Thread:
+        ctl["stop"] = threading.Event()
+        thread = threading.Thread(target=analyze_loop, daemon=True, name="rtsp-analyze")
+        thread.start()
+        return thread
+
+    def stop_analyze(thread: threading.Thread | None) -> None:
+        ctl["stop"].set()
+        if thread is not None:
+            thread.join(timeout=2.5)
+
+    worker = start_analyze()
     prev = time.monotonic()
     fps = 0.0
     last_store_check = 0.0
-    logger.info("多路监测已启动。q 退出。")
+    logger.info("多路监测已启动。预览和识别分开跑。q 退出。")
     try:
         while True:
             now_wall = time.monotonic()
@@ -229,52 +344,62 @@ def run_rtsp_monitor(
                     except Exception:
                         logger.exception("摄像机名单已改，但重连失败，仍用当前画面")
                     else:
+                        stop_analyze(worker)
                         close_camera_views(views)
                         views = refreshed
+                        ctl["views"] = views
                         focus = 0
+                        worker = start_analyze()
             panes: list[np.ndarray] = []
             groups: list[list[Track]] = []
             any_ok = False
-            for view in views:
+            live = ctl["views"]
+            for view in live:
                 frame = view.capture.read()
                 if frame is None:
                     view.miss += 1
                     if view.miss == 1 or view.miss % 80 == 0:
                         logger.warning("%s 中断，稍后重试", view.name)
+                    if should_reconnect(view.miss):
+                        try:
+                            source = reopen_rtsp(store.rtsp, view.cam_id)
+                        except Exception:
+                            logger.exception("重连 %s 失败", view.name)
+                        else:
+                            view.capture.close()
+                            view.capture = source
+                            view.miss = 0
+                            logger.info("已重连 %s", view.name)
+                else:
+                    _push_frame(view, frame)
+                    any_ok = True
+                shot, tracks, locked_id = _display_snapshot(view)
+                if shot is not None and view.miss < 15:
+                    groups.append(tracks)
+                    panes.append(
+                        draw_overlay(
+                            shot,
+                            tracks,
+                            idle,
+                            locked_id,
+                            fps,
+                            gimbal_name,
+                            settings.follow.deadzone,
+                            monitor=True,
+                            title=view.name,
+                            scene_line=scene.line_for(view.cam_id) if scene is not None else "",
+                            map_line=mapper.line_for(view.cam_id) if mapper is not None else "",
+                            mocap_line=mocap.line_for(view.cam_id) if mocap is not None else "",
+                            seats=recognizer.seats_for(view.cam_id) if recognizer is not None else None,
+                        )
+                    )
+                else:
                     groups.append([])
                     panes.append(np.zeros((180, 320, 3), dtype=np.uint8))
-                    continue
-                view.miss = 0
-                any_ok = True
-                view.frame = frame
-                tracks = view.tracker.track(frame)
-                for track in tracks:
-                    track.id += view.offset
-                if recognizer is not None:
-                    tracks = recognizer.apply(frame, tracks, tick_appear=False)
-                view.tracks = tracks
-                view.locker.update(tracks, max(1e-3, now_wall - prev))
-                groups.append(tracks)
-                panes.append(
-                    draw_overlay(
-                        frame,
-                        tracks,
-                        idle,
-                        view.locker.locked_id,
-                        fps,
-                        gimbal_name,
-                        settings.follow.deadzone,
-                        monitor=True,
-                        title=view.name,
-                    )
-                )
-            if recognizer is not None:
-                recognizer.flush_appear(groups)
             merged = [track for group in groups for track in group]
             latest["tracks"] = merged
-            station = None
             if watch is not None:
-                station = watch.tick(merged, camera_ok=any_ok)
+                watch.tick(merged, camera_ok=any_ok)
             dt = now_wall - prev
             prev = now_wall
             fps = fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
@@ -283,33 +408,67 @@ def run_rtsp_monitor(
                 0.0,
                 0.0,
                 capture="rtsp",
-                device=" + ".join(view.name for view in views),
+                device=" + ".join(view.name for view in live),
             )
             if not any_ok:
                 time.sleep(0.02)
-            layout["canvas"] = preview_canvas(WINDOW) if not args.no_preview else (1920, 1080)
+            layout["canvas"] = native_mosaic_size(panes)
             grid = compose_grid(panes, layout["canvas"])
-            preview.publish(grid)
+            preview.publish(
+                grid,
+                cameras=[
+                    {
+                        "id": view.cam_id,
+                        "name": view.name,
+                        **(
+                            {
+                                "src_w": int(view.frame.shape[1]),
+                                "src_h": int(view.frame.shape[0]),
+                                "boxes": boxes_from_tracks(
+                                    group,
+                                    int(view.frame.shape[1]),
+                                    int(view.frame.shape[0]),
+                                ),
+                            }
+                            if view.frame is not None
+                            else {}
+                        ),
+                    }
+                    for view, group in zip(live, groups, strict=False)
+                ],
+                panes=[
+                    {"id": view.cam_id, "name": view.name, "image": pane}
+                    for view, pane in zip(live, panes, strict=False)
+                ],
+            )
             if args.no_preview:
                 continue
             cv2.imshow(WINDOW, grid)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 return 0
-            if key == ord("c") and views:
-                views[focus].locker.clear()
-            if key == ord("e") and recognizer is not None and views:
-                view = views[focus]
-                target = next((t for t in view.tracks if t.id == view.locker.locked_id), None)
-                if target is None and view.tracks:
-                    target = view.locker.update(view.tracks, 0.0)
-                if target is not None and view.frame is not None:
-                    name = recognizer.enroll_track(view.frame, target)
+            if key == ord("c") and live:
+                with live[focus].lock:
+                    live[focus].locker.clear()
+            if key == ord("e") and recognizer is not None and live:
+                view = live[focus]
+                with view.lock:
+                    frame = view.frame
+                    tracks = list(view.tracks)
+                    locked_id = view.locker.locked_id
+                target = next((t for t in tracks if t.id == locked_id), None)
+                if target is None and tracks:
+                    with view.lock:
+                        target = view.locker.update(tracks, 0.0)
+                if target is not None and frame is not None:
+                    with gate:
+                        name = recognizer.enroll_track(frame, target)
                     if name:
                         logger.info("已登记 %s", name)
         return 0
     finally:
-        close_camera_views(views)
+        stop_analyze(worker)
+        close_camera_views(ctl["views"])
 
 
 def build_gimbal(settings: Settings, client: DjiUdpClient | None):
@@ -340,6 +499,9 @@ def main(argv: list[str] | None = None) -> int:
 
     capture: FrameSource | None = None
     gimbal = None
+    scene: SceneNarrator | None = None
+    mapper: SceneMapper | None = None
+    mocap: MocapClient | None = None
     store = CaptureStore(settings.capture, settings.rtsp)
     try:
         recognizer: PersonRecognizer | None = None
@@ -361,6 +523,15 @@ def main(argv: list[str] | None = None) -> int:
             else None
         )
         preview = PreviewHub(settings.preview)
+        scene = SceneNarrator(settings.scene) if settings.scene.enabled else None
+        if scene is not None:
+            logger.info("场景理解旁路已开：%s %s（不进跟拍）", settings.scene.backend, settings.scene.model)
+        mapper = SceneMapper(settings.geomap) if settings.geomap.enabled else None
+        if mapper is not None:
+            logger.info("三维重建旁路已开：LingBot-Map %s（不进跟拍）", settings.geomap.backend)
+        mocap = MocapClient(settings.mocap) if settings.mocap.enabled else None
+        if mocap is not None:
+            logger.info("动作捕捉旁路已开：FreeMoCap %s（不进跟拍）", settings.mocap.backend)
         if store.capture.source == "rtsp":
             return run_rtsp_monitor(
                 args,
@@ -373,6 +544,9 @@ def main(argv: list[str] | None = None) -> int:
                 recognizer,
                 args.rtsp_camera,
                 preview,
+                scene,
+                mapper,
+                mocap,
             )
         capture = open_capture(store.capture, settings.wifi, client, store.rtsp)
         tracker = PersonTracker(settings.detect)
@@ -471,6 +645,10 @@ def main(argv: list[str] | None = None) -> int:
             fps = fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
 
             tracks = tracker.track(frame)
+            if mapper is not None:
+                mapper.annotate(tracks, capture_kind)
+            if mocap is not None:
+                mocap.annotate(tracks, capture_kind)
             if recognizer is not None:
                 tracks = recognizer.apply(frame, tracks)
             latest["tracks"] = tracks
@@ -494,6 +672,12 @@ def main(argv: list[str] | None = None) -> int:
                 capture=capture_kind,
                 device=capture_name,
             )
+            if mapper is not None:
+                mapper.offer(frame, tracks, camera_id=capture_kind, camera_name=capture_name)
+            if mocap is not None:
+                mocap.offer(frame, tracks, camera_id=capture_kind, camera_name=capture_name)
+            if scene is not None:
+                scene.offer(frame, tracks, camera_id=capture_kind, camera_name=capture_name)
 
             vis = draw_overlay(
                 frame,
@@ -516,8 +700,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if part
                 ),
+                scene_line=scene.line_for(capture_kind) if scene is not None else "",
+                map_line=mapper.line_for(capture_kind) if mapper is not None else "",
+                mocap_line=mocap.line_for(capture_kind) if mocap is not None else "",
             )
-            preview.publish(vis)
+            preview.publish(vis, cameras=[])
             if args.no_preview:
                 if command.target_id is not None:
                     logger.debug(
@@ -555,6 +742,12 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     finally:
+        if mocap is not None:
+            mocap.close()
+        if mapper is not None:
+            mapper.close()
+        if scene is not None:
+            scene.close()
         if gimbal is not None:
             gimbal.close()
         if capture is not None:

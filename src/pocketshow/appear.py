@@ -24,13 +24,20 @@ def _duration(seconds: float) -> str:
 
 
 class AppearanceLog:
-    """入镜/离镜流水。JSONL 追加写入，短时遮挡不拆成两次。"""
+    """入镜/离镜流水。JSONL 追加写入，短时遮挡不拆成两次；只冒一下头不记入镜。"""
 
-    def __init__(self, path: str | Path, gap_s: float = 1.6, max_events: int = 4000) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        gap_s: float = 4.0,
+        max_events: int = 4000,
+        min_present_s: float = 6.0,
+    ) -> None:
         self.path = Path(path)
         self.present_path = self.path.with_name("present.json")
         self.gap_s = gap_s
         self.max_events = max_events
+        self.min_present_s = max(0.0, float(min_present_s))
         self.live: dict[str, dict] = {}
         self._writes = 0
         self._last_present_write = 0.0
@@ -45,6 +52,7 @@ class AppearanceLog:
             guest = bool(info.get("guest"))
             session = self.live.get(pid)
             if session is None:
+                logged = self.min_present_s <= 0
                 session = {
                     "person_id": pid,
                     "name": name,
@@ -52,31 +60,54 @@ class AppearanceLog:
                     "guest": guest,
                     "start": now,
                     "last": now,
+                    "tick": now,
                     "frames": 1,
+                    "visible_s": 0.0,
+                    "logged": logged,
                 }
                 self.live[pid] = session
-                self._append(
-                    {
-                        "event": "enter",
-                        "t": now,
-                        "ts": _fmt(now),
-                        "person_id": pid,
-                        "name": name,
-                        "photo": photo,
-                    }
-                )
+                if logged:
+                    self._append(
+                        {
+                            "event": "enter",
+                            "t": now,
+                            "ts": _fmt(now),
+                            "person_id": pid,
+                            "name": name,
+                            "photo": photo,
+                        }
+                    )
             else:
+                dt = max(0.0, now - float(session.get("tick") or now))
+                session["visible_s"] = float(session.get("visible_s") or 0.0) + min(dt, 1.0)
+                session["tick"] = now
                 session["last"] = now
                 session["frames"] = int(session.get("frames") or 0) + 1
                 session["name"] = name
                 session["guest"] = guest
                 if photo:
                     session["photo"] = photo
+                if not session.get("logged") and session["visible_s"] >= self.min_present_s:
+                    session["logged"] = True
+                    start = float(session["start"])
+                    self._append(
+                        {
+                            "event": "enter",
+                            "t": start,
+                            "ts": _fmt(start),
+                            "person_id": pid,
+                            "name": session.get("name") or pid,
+                            "photo": session.get("photo") or "",
+                        }
+                    )
 
         gone = [pid for pid in list(self.live) if pid not in seen]
         for pid in gone:
             session = self.live[pid]
             if now - float(session["last"]) < self.gap_s:
+                continue
+            if not session.get("logged"):
+                del self.live[pid]
                 continue
             start = float(session["start"])
             end = float(session["last"])
@@ -97,7 +128,7 @@ class AppearanceLog:
         self._write_present(now)
 
     def present(self, now: float | None = None) -> dict:
-        """跟拍进程写出的当前在镜名单，管理页用来做「在镜中」栏目。"""
+        """跟拍进程写出的当前在镜名单，离岗分析用来判断谁还在工位。"""
         now = time.time() if now is None else now
         path = self.present_path
         if not path.exists():
@@ -123,13 +154,14 @@ class AppearanceLog:
 
     def _write_present(self, now: float) -> None:
         monotonic = time.monotonic()
-        ids = tuple(sorted(self.live))
+        visible = {pid: session for pid, session in self.live.items() if session.get("logged")}
+        ids = tuple(sorted(visible))
         if ids == self._last_present_ids and monotonic - self._last_present_write < 0.25:
             return
         self._last_present_write = monotonic
         self._last_present_ids = ids
         people = []
-        for pid, session in self.live.items():
+        for pid, session in visible.items():
             start = float(session["start"])
             last = float(session.get("last") or now)
             people.append(
@@ -225,6 +257,8 @@ class AppearanceLog:
         live_rows = []
         for pid, session in self.live.items():
             if person_id and pid != person_id:
+                continue
+            if not session.get("logged"):
                 continue
             start = float(session["start"])
             last = float(session["last"])

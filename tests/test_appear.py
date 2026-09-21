@@ -2,7 +2,7 @@ from pocketshow.appear import AppearanceLog
 
 
 def test_appearance_enter_and_leave(tmp_path):
-    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0)
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0, min_present_s=0)
     log.tick({"p001": {"name": "人物A", "photo": "p001/cover.jpg"}}, now=1000.0)
     log.tick({"p001": {"name": "人物A", "photo": "p001/cover.jpg"}}, now=1000.5)
     assert log.live["p001"]["frames"] == 2
@@ -19,7 +19,7 @@ def test_appearance_enter_and_leave(tmp_path):
 
 
 def test_appearance_filter_by_person(tmp_path):
-    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=0.1)
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=0.1, min_present_s=0)
     log.tick({"p001": {"name": "A"}, "p002": {"name": "B"}}, now=10.0)
     log.tick({}, now=11.0)
     only_a = log.visits(person_id="p001")
@@ -28,7 +28,7 @@ def test_appearance_filter_by_person(tmp_path):
 
 
 def test_present_snapshot(tmp_path):
-    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0)
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0, min_present_s=0)
     log.tick({"p001": {"name": "人物A", "photo": "p001/cover.jpg"}}, now=1000.0)
     data = log.present(now=1000.2)
     assert data["fresh"] is True
@@ -44,9 +44,35 @@ def test_present_snapshot(tmp_path):
 
 
 def test_concurrent_pairs_from_overlapping_visits(tmp_path):
-    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=0.5)
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=0.5, min_present_s=0)
     log.tick({"p001": {"name": "A"}, "p002": {"name": "B"}}, now=1000.0)
     log.tick({"p001": {"name": "A"}, "p002": {"name": "B"}}, now=1010.0)
     log.tick({}, now=1020.0)
     assert ("p001", "p002") in log.concurrent_pairs(min_overlap_s=8.0)
     assert log.concurrent_pairs(min_overlap_s=30.0) == set()
+
+
+def test_short_peek_is_not_logged(tmp_path):
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0, min_present_s=6.0)
+    log.tick({"p001": {"name": "徐璐"}}, now=1000.0)
+    data = log.present(now=1000.1)
+    assert data["count"] == 0
+    log.tick({}, now=1002.0)
+    assert "p001" not in log.live
+    assert log.visits() == []
+    assert log.raw_events() == []
+
+
+def test_staying_logs_enter_after_min_present(tmp_path):
+    log = AppearanceLog(tmp_path / "appear.jsonl", gap_s=1.0, min_present_s=6.0)
+    t = 1000.0
+    log.tick({"p001": {"name": "恒瑞"}}, now=t)
+    for _ in range(8):
+        t += 1.0
+        log.tick({"p001": {"name": "恒瑞"}}, now=t)
+    assert log.live["p001"]["logged"] is True
+    data = log.present(now=t)
+    assert data["count"] == 1
+    assert data["people"][0]["name"] == "恒瑞"
+    events = log.raw_events()
+    assert [e["event"] for e in events] == ["enter"]

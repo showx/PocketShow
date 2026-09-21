@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from pocketshow.appear import AppearanceLog
+from pocketshow.seats import merge_seats, person_seats, pinned_seat, vacate_overlapping
 
 _NAME_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 _MAX_SNAPS = 8
@@ -25,6 +26,29 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 
 def now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def crop_around(frame: np.ndarray, cx: float, cy: float, rx: float = 0.08, ry: float = 0.16) -> np.ndarray | None:
+    h, w = frame.shape[:2]
+    if h < 16 or w < 16:
+        return None
+    x1 = int(round((float(cx) - rx) * w))
+    y1 = int(round((float(cy) - ry) * h))
+    x2 = int(round((float(cx) + rx) * w))
+    y2 = int(round((float(cy) + ry) * h))
+    x1, x2 = max(0, min(x1, x2)), min(w, max(x1, x2))
+    y1, y2 = max(0, min(y1, y2)), min(h, max(y1, y2))
+    if x2 - x1 < 16 or y2 - y1 < 16:
+        return None
+    crop = frame[y1:y2, x1:x2]
+    if crop.size == 0:
+        return None
+    ch, cw = crop.shape[:2]
+    longest = max(ch, cw)
+    if longest > 480:
+        scale = 480 / longest
+        crop = cv2.resize(crop, (int(cw * scale), int(ch * scale)), interpolation=cv2.INTER_AREA)
+    return crop
 
 
 def crop_face(frame: np.ndarray, xyxy: tuple[float, float, float, float], pad: float = 0.42) -> np.ndarray | None:
@@ -99,27 +123,189 @@ class FaceGallery:
         return next((p for p in self.people if p.get("id") == person_id), None)
 
     def person_vectors(self, person: dict) -> list[np.ndarray]:
-        vecs = [np.asarray(person["embedding"], dtype=np.float32)]
+        vecs: list[np.ndarray] = []
+        if person.get("embedding"):
+            vecs.append(np.asarray(person["embedding"], dtype=np.float32))
         for extra in person.get("templates") or []:
             vecs.append(np.asarray(extra, dtype=np.float32))
         return vecs
 
+    def match_vectors(self, person: dict) -> list[np.ndarray]:
+        """认人时优先用模板。均值向量被长期糊脸冲过，容易把不同的人认成同一个。"""
+        templates = [np.asarray(extra, dtype=np.float32) for extra in person.get("templates") or []]
+        if templates:
+            return templates
+        if person.get("embedding"):
+            return [np.asarray(person["embedding"], dtype=np.float32)]
+        return []
+
     def score(self, person: dict, embedding: np.ndarray) -> float:
         best = -1.0
-        for vec in self.person_vectors(person):
+        for vec in self.match_vectors(person):
             sim = cosine_sim(embedding, vec)
             if sim > best:
                 best = sim
         return best
 
-    def add_template(self, person: dict, embedding: np.ndarray, *, max_templates: int = 6) -> None:
-        vec = embedding.astype(float)
+    def template_collides(self, embedding: np.ndarray, person_id: str, threshold: float) -> bool:
+        for other in self.people:
+            if other.get("id") == person_id or not other.get("embedding"):
+                continue
+            for vec in self.match_vectors(other):
+                if cosine_sim(embedding, vec) >= threshold:
+                    return True
+        return False
+
+    def add_template(
+        self,
+        person: dict,
+        embedding: np.ndarray,
+        *,
+        max_templates: int = 6,
+        collide: float = 0.55,
+        force: bool = False,
+    ) -> bool:
+        vec = np.asarray(embedding, dtype=np.float32)
         existing = self.person_vectors(person)
-        if existing and max(cosine_sim(embedding, v) for v in existing) >= 0.88:
-            return
+        if existing and max(cosine_sim(vec, v) for v in existing) >= 0.88:
+            return False
+        if not force and collide > 0 and self.template_collides(vec, str(person.get("id") or ""), collide):
+            return False
         templates = list(person.get("templates") or [])
-        templates.append(vec.tolist())
+        templates.append(vec.astype(float).tolist())
         person["templates"] = templates[-max_templates:]
+        return True
+
+    def prune_colliding_templates(self, threshold: float = 0.55) -> int:
+        """丢掉和别人几乎一样的模板，避免一个人的侧脸把整间办公室认成同名。"""
+        snapshots = {p["id"]: self.match_vectors(p) for p in self.people if p.get("id") and p.get("embedding")}
+        changed = False
+        dropped = 0
+        for person in self.people:
+            original = list(person.get("templates") or [])
+            kept: list = []
+            pid = person.get("id")
+            for extra in original:
+                vec = np.asarray(extra, dtype=np.float32)
+                hit = False
+                for oid, vecs in snapshots.items():
+                    if oid == pid:
+                        continue
+                    if any(cosine_sim(vec, other) >= threshold for other in vecs):
+                        hit = True
+                        break
+                if hit:
+                    dropped += 1
+                else:
+                    kept.append(extra)
+            if len(kept) != len(original):
+                person["templates"] = kept
+                changed = True
+        if changed:
+            self.save()
+        return dropped
+
+    def appearance_vectors(self, person: dict) -> list[np.ndarray]:
+        vecs: list[np.ndarray] = []
+        if person.get("appearance"):
+            vecs.append(np.asarray(person["appearance"], dtype=np.float32))
+        for extra in person.get("appearances") or []:
+            vecs.append(np.asarray(extra, dtype=np.float32))
+        return vecs
+
+    def match_appearances(self, person: dict) -> list[np.ndarray]:
+        extras = [np.asarray(item, dtype=np.float32) for item in person.get("appearances") or []]
+        if extras:
+            return extras
+        if person.get("appearance"):
+            return [np.asarray(person["appearance"], dtype=np.float32)]
+        return []
+
+    def score_appearance(self, person: dict, embedding: np.ndarray) -> float:
+        best = -1.0
+        for vec in self.match_appearances(person):
+            sim = cosine_sim(embedding, vec)
+            if sim > best:
+                best = sim
+        return best
+
+    def appearance_collides(self, embedding: np.ndarray, person_id: str, threshold: float) -> bool:
+        for other in self.people:
+            if other.get("id") == person_id:
+                continue
+            for vec in self.match_appearances(other):
+                if cosine_sim(embedding, vec) >= threshold:
+                    return True
+        return False
+
+    def add_appearance(
+        self,
+        person: dict,
+        embedding: np.ndarray,
+        *,
+        max_templates: int = 6,
+        collide: float = 0.58,
+        force: bool = False,
+    ) -> bool:
+        vec = np.asarray(embedding, dtype=np.float32)
+        existing = self.appearance_vectors(person)
+        if existing and max(cosine_sim(vec, v) for v in existing) >= 0.92:
+            return False
+        if not force and collide > 0 and self.appearance_collides(vec, str(person.get("id") or ""), collide):
+            return False
+        extras = list(person.get("appearances") or [])
+        extras.append(vec.astype(float).tolist())
+        person["appearances"] = extras[-max_templates:]
+        return True
+
+    def update_appearance(self, person: dict, embedding: np.ndarray, sim: float = 1.0, *, force: bool = False, collide: float = 0.58) -> None:
+        vec = np.asarray(embedding, dtype=np.float32)
+        n = int(person.get("appearance_samples") or 0)
+        old = np.asarray(person.get("appearance") or [], dtype=np.float32)
+        if old.size == 0:
+            person["appearance"] = vec.astype(float).tolist()
+            person["appearance_samples"] = max(1, n + 1)
+            self.add_appearance(person, vec, collide=collide, force=True)
+            self.save()
+            return
+        person["appearance_samples"] = n + 1
+        if force or sim >= 0.50:
+            alpha = 1.0 if force else 0.12
+            blended = (1.0 - alpha) * old + alpha * vec
+            norm = float(np.linalg.norm(blended))
+            if norm > 1e-6:
+                blended = blended / norm
+            person["appearance"] = blended.astype(float).tolist()
+            self.add_appearance(person, vec, collide=collide, force=force)
+        if person["appearance_samples"] % 8 == 0:
+            self.save()
+
+    def prune_colliding_appearances(self, threshold: float = 0.58) -> int:
+        snapshots = {p["id"]: self.match_appearances(p) for p in self.people if p.get("id") and self.match_appearances(p)}
+        changed = False
+        dropped = 0
+        for person in self.people:
+            original = list(person.get("appearances") or [])
+            kept: list = []
+            pid = person.get("id")
+            for extra in original:
+                vec = np.asarray(extra, dtype=np.float32)
+                hit = any(
+                    cosine_sim(vec, other) >= threshold
+                    for oid, vecs in snapshots.items()
+                    if oid != pid
+                    for other in vecs
+                )
+                if hit:
+                    dropped += 1
+                else:
+                    kept.append(extra)
+            if len(kept) != len(original):
+                person["appearances"] = kept
+                changed = True
+        if changed:
+            self.save()
+        return dropped
 
     def pair_score(self, a: dict, b: dict) -> float:
         """两条档案有多像。取全部模板对的中位数，避免一张糊脸/侧脸把不同的人拉在一起。"""
@@ -162,17 +348,40 @@ class FaceGallery:
             raise KeyError(source_id if keep is not None else keep_id)
         kn = max(1, int(keep.get("samples") or 1))
         sn = max(1, int(src.get("samples") or 1))
-        ke = np.asarray(keep["embedding"], dtype=np.float32)
-        se = np.asarray(src["embedding"], dtype=np.float32)
-        blended = (ke * kn + se * sn) / (kn + sn)
-        norm = float(np.linalg.norm(blended))
-        if norm > 1e-6:
-            blended = blended / norm
-        keep["embedding"] = blended.astype(float).tolist()
-        keep["samples"] = kn + sn
-        self.add_template(keep, se)
+        ke = np.asarray(keep.get("embedding") or [], dtype=np.float32)
+        se = np.asarray(src.get("embedding") or [], dtype=np.float32)
+        if ke.size and se.size and ke.shape == se.shape:
+            blended = (ke * kn + se * sn) / (kn + sn)
+            norm = float(np.linalg.norm(blended))
+            if norm > 1e-6:
+                blended = blended / norm
+            keep["embedding"] = blended.astype(float).tolist()
+            keep["samples"] = kn + sn
+            self.add_template(keep, se, force=True)
+        elif se.size and not ke.size:
+            keep["embedding"] = se.astype(float).tolist()
+            keep["samples"] = max(1, int(src.get("samples") or 1))
+            self.add_template(keep, se, force=True)
         for extra in src.get("templates") or []:
-            self.add_template(keep, np.asarray(extra, dtype=np.float32))
+            self.add_template(keep, np.asarray(extra, dtype=np.float32), force=True)
+        ka = np.asarray(keep.get("appearance") or [], dtype=np.float32)
+        sa = np.asarray(src.get("appearance") or [], dtype=np.float32)
+        kn_app = max(1, int(keep.get("appearance_samples") or 1))
+        sn_app = max(1, int(src.get("appearance_samples") or 1))
+        if ka.size and sa.size and ka.shape == sa.shape:
+            blended = (ka * kn_app + sa * sn_app) / (kn_app + sn_app)
+            norm = float(np.linalg.norm(blended))
+            if norm > 1e-6:
+                blended = blended / norm
+            keep["appearance"] = blended.astype(float).tolist()
+            keep["appearance_samples"] = kn_app + sn_app
+            self.add_appearance(keep, sa, force=True)
+        elif sa.size and not ka.size:
+            keep["appearance"] = sa.astype(float).tolist()
+            keep["appearance_samples"] = max(1, int(src.get("appearance_samples") or 1))
+            self.add_appearance(keep, sa, force=True)
+        for extra in src.get("appearances") or []:
+            self.add_appearance(keep, np.asarray(extra, dtype=np.float32), force=True)
         note_bits = [keep.get("note") or "", src.get("note") or "", f"已合并 {src.get('name') or source_id}"]
         keep["note"] = "；".join(x for x in note_bits if x)
         keep["updated_at"] = now_iso()
@@ -200,6 +409,7 @@ class FaceGallery:
 
         self.people = [p for p in self.people if p.get("id") != source_id]
         self.appear.relabel(source_id, keep_id, str(keep.get("name") or keep_id))
+        merge_seats(keep, src)
         self.save()
         return keep
 
@@ -219,23 +429,70 @@ class FaceGallery:
                 nums.append(int(pid[1:]))
         return f"p{max(nums, default=0) + 1:03d}"
 
-    def enroll(self, embedding: np.ndarray, name: str | None = None) -> dict:
+    def enroll(self, embedding: np.ndarray | None = None, name: str | None = None) -> dict:
         stamp = now_iso()
+        vec = np.asarray(embedding, dtype=np.float32) if embedding is not None else np.zeros(0, dtype=np.float32)
         person = {
             "id": self.next_id(),
-            "name": name or self.next_name(),
+            "name": (name or "").strip() or self.next_name(),
             "note": "",
             "guest": False,
-            "embedding": embedding.astype(float).tolist(),
-            "samples": 1,
+            "embedding": vec.astype(float).tolist() if vec.size else [],
+            "samples": 1 if vec.size else 0,
             "created_at": stamp,
             "updated_at": stamp,
             "photo": "",
             "photo_area": 0.0,
             "photo_at": 0.0,
             "templates": [],
+            "appearance": [],
+            "appearances": [],
+            "appearance_samples": 0,
+            "seats": {},
         }
         self.people.append(person)
+        self.save()
+        return person
+
+    def clear_seat(self, person_id: str, camera_id: str | None = None) -> dict:
+        person = self.find(person_id)
+        if person is None:
+            raise KeyError(person_id)
+        if camera_id:
+            seats = person_seats(person)
+            seats.pop(str(camera_id), None)
+            person["seats"] = seats
+        else:
+            person["seats"] = {}
+        person["updated_at"] = now_iso()
+        self.save()
+        return person
+
+    def pin_seat(
+        self,
+        person_id: str,
+        camera_id: str,
+        cx: float,
+        cy: float,
+        *,
+        camera_name: str = "",
+        rx: float | None = None,
+        ry: float | None = None,
+    ) -> dict:
+        person = self.find(person_id)
+        if person is None:
+            raise KeyError(person_id)
+        if person.get("guest"):
+            raise ValueError("客人不定工位")
+        camera_id = str(camera_id or "").strip()
+        if not camera_id:
+            raise ValueError("跟拍画面不定工位，请点固定镜头宫格")
+        seat = pinned_seat(cx, cy, camera_name=camera_name, rx=rx, ry=ry)
+        vacate_overlapping(self.people, camera_id, seat, person_id)
+        seats = person_seats(person)
+        seats[camera_id] = seat
+        person["seats"] = seats
+        person["updated_at"] = now_iso()
         self.save()
         return person
 
@@ -243,6 +500,29 @@ class FaceGallery:
         path = self.photos_dir / person_id
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def save_point_crop(
+        self,
+        person: dict,
+        frame: np.ndarray,
+        cx: float,
+        cy: float,
+        *,
+        rx: float = 0.08,
+        ry: float = 0.16,
+    ) -> Path | None:
+        crop = crop_around(frame, cx, cy, rx=rx, ry=ry)
+        if crop is None:
+            return None
+        folder = self.person_dir(person["id"])
+        cover = folder / _COVER
+        cover.write_bytes(encode_jpeg(crop))
+        person["photo"] = f"{person['id']}/{_COVER}"
+        person["photo_area"] = float(crop.shape[0] * crop.shape[1])
+        person["photo_at"] = datetime.now().timestamp()
+        person["updated_at"] = now_iso()
+        self.save()
+        return cover
 
     def save_crop(
         self,
@@ -375,6 +655,29 @@ class FaceGallery:
         items.sort(key=lambda x: (not x["cover"], x["name"]))
         return items
 
+    @staticmethod
+    def _public_seats(person: dict) -> list[dict]:
+        rows: list[dict] = []
+        for cam_id, seat in person_seats(person).items():
+            row = {
+                "camera_id": cam_id,
+                "camera_name": str(seat.get("camera_name") or cam_id),
+                "hits": int(seat.get("hits") or 0),
+                "locked": bool(seat.get("locked")),
+                "cx": round(float(seat.get("cx") or 0), 3),
+                "cy": round(float(seat.get("cy") or 0), 3),
+                "rx": round(float(seat.get("rx") or 0), 3),
+                "ry": round(float(seat.get("ry") or 0), 3),
+            }
+            xyz = seat.get("xyz")
+            if isinstance(xyz, (list, tuple)) and len(xyz) >= 3:
+                try:
+                    row["xyz"] = [round(float(v), 3) for v in xyz[:3]]
+                except (TypeError, ValueError):
+                    pass
+            rows.append(row)
+        return rows
+
     def public(self, person: dict) -> dict:
         pid = person.get("id", "")
         photos = self.list_photos(pid)
@@ -389,6 +692,7 @@ class FaceGallery:
             "updated_at": person.get("updated_at") or "",
             "photo_url": cover,
             "photos": photos,
+            "seats": self._public_seats(person),
         }
 
     def public_all(self, dup_threshold: float = 0.70) -> list[dict]:

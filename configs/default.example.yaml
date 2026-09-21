@@ -16,9 +16,10 @@ detect:
   device: auto          # auto | mps | cpu | 0
   tracker: bytetrack.yaml
   min_height: 12
-  far_pass: true        # 画面上半再切两块高分检测，补远处漏检
-  far_ratio: 0.75
+  far_pass: true        # 整帧再切 2×2 高分检测，补坐着的人和远处小人
+  far_ratio: 1.0
   far_tiles: 2
+  far_rows: 2
   tile_overlap: 0.2
 
 follow:
@@ -34,11 +35,21 @@ follow:
 
 recognize:
   enabled: true
-  match_threshold: 0.43   # 达到则认定为已有人物（A/B 约 0.37，不能再低）
-  soft_threshold: 0.38    # 弱匹配并入已有人物；同框第二张脸不再开新档
+  match_threshold: 0.50   # 正脸且明显高于第二名才给名字；宁漏勿错
+  soft_threshold: 0.42    # 低于此才允许自动开新档
+  match_margin: 0.06      # 和最像的第二人分差不够就空着
   dup_threshold: 0.70     # 管理页「疑似同一人」：模板对中位数，同框过的人不会提示
   det_score: 0.5          # 远处小脸分数偏低
   det_min_face: 12
+  match_min_face: 18      # 小于此像素不比对；可比入库更小
+  match_min_score: 0.52
+  match_max_yaw: 0.72     # 略侧也先拿去跟底库/工位对
+  id_min_face: 28         # 小于此像素不写入底库（子码流近处脸大约这么大）
+  id_min_score: 0.65
+  id_max_yaw: 0.50        # 入库仍要正脸
+  id_confirm: 2           # 纯人脸连续几帧才上名；工位对上或分很高则 1 帧
+  update_min_sim: 0.55    # 够像才把这张脸写进底库
+  template_collide: 0.55
   enroll_score: 0.88
   enroll_min_face: 36
   enroll_confirm: 18
@@ -49,6 +60,16 @@ recognize:
   liveness_min_face: 40     # 小于此像素跳过活体，否则远处正脸也被拦
   gallery: data/faces.json
   photos: data/faces
+  seats: true               # 固定镜头记住每个人常坐的位置，后脑勺也能对上
+  seat_min_hits: 3
+  seat_confirm: 2
+  reid: true                # OSNet-x0.25 人体外观，和工位一起认人
+  reid_threshold: 0.48      # 外观明显高于第二名才单独给名字
+  reid_soft: 0.38           # 和锁定工位一致时可以低一点
+  reid_margin: 0.08
+  reid_update: 0.50         # 够像才把这身衣服写进底库
+  reid_collide: 0.58
+  reid_min_height: 24       # 人框太矮不抽外观
 
 gimbal:
   backend: stub         # stub | wifi
@@ -70,11 +91,11 @@ rtsp:
   camera_id: ""         # 当前监测的摄像机 id
   username: admin
   password: ""          # 各路没单独填密码时用这个；也可用 POCKETSHOW_RTSP_PASSWORD
-  cameras: []           # 管理页添加多路，勾选 monitor 决定监测哪些；NVR 同一 IP 用不同 channel
+  cameras: []           # 管理页添加多路，监测画面上方点选要拉哪些；NVR 同一 IP 用不同 channel
   host: ""              # 兼容单路：没有 cameras 时用这里
   port: 554
   channel: 1
-  stream: sub           # 远处看不清可改 main 主码流
+  stream: sub           # 监测默认子码流；卡顿时先把识别从预览线程拆开，不要靠拉主码流
   url: ""
   transport: tcp
   settings: data/capture.json
@@ -90,3 +111,56 @@ watch:
   log: data/away.jsonl
 
 preview: data/preview.jpg   # 跟拍画布，管理页「离岗分析」里看
+
+# 旁路场景理解：抽关键帧问视觉模型「在干嘛」，只写 HUD / 日志，不进跟拍 PID。
+# MOSS-VL 实时（推荐）：先在 GPU 机器起服务，再把 backend 改成 moss-vl。
+#   HuggingFace 参考服务：
+#     CUDA_VISIBLE_DEVICES=0 python inference/realtime/run_online_inference.py --serve --host 0.0.0.0 --port 8000
+#   多路实时用 SGLang-Omni：ws://127.0.0.1:18500/v1/video/realtime
+# openai 兼容（Mage-VL / SGLang chat）仍可用。
+scene:
+  enabled: false
+  backend: moss-vl          # moss-vl | openai | stub
+  protocol: auto            # auto | hf | sglang
+  ws_url: ws://127.0.0.1:8000/v1/realtime
+  base_url: http://127.0.0.1:30000/v1   # openai 后端用
+  api_key: ""               # 也可环境变量 POCKETSHOW_SCENE_API_KEY
+  model: OpenMOSS-Team/MOSS-VL-Realtime
+  interval_s: 8.0           # openai 每路最少间隔（秒）
+  sample_fps: 1.0           # moss-vl 采样帧率
+  gap_s: 2.0                # 任意两路之间
+  timeout_s: 25.0
+  max_width: 768
+  jpeg_quality: 70
+  max_tokens: 80
+  max_tokens_per_second: 12.0
+  log: data/scene.jsonl
+  status: data/scene.json
+
+# 旁路三维重建：把画面送给 LingBot-Map，得到相机位姿和人的 3D 坐标，不进跟拍。
+# GPU 机器上先：python scripts/lingbot_map_serve.py --model_path /path/to/lingbot-map.pt
+geomap:
+  enabled: false
+  backend: http             # http | stub
+  base_url: http://127.0.0.1:8090
+  camera_id: ""             # 空=第一路；多路只重建这一路 id
+  interval_s: 0.5
+  timeout_s: 8.0
+  max_width: 640
+  jpeg_quality: 80
+  log: data/map.jsonl
+  status: data/map.json
+
+# 旁路动作捕捉：把画面送给 FreeMoCap / skellytracker，骨架叠在 HUD 上，不进跟拍。
+# GPU / 本机先：python scripts/freemocap_serve.py --port 8006
+mocap:
+  enabled: false
+  backend: http             # http | stub
+  base_url: http://127.0.0.1:8006
+  camera_id: ""             # 空=所有路；多路只捕这一路 id
+  interval_s: 0.4
+  timeout_s: 6.0
+  max_width: 640
+  jpeg_quality: 75
+  log: data/mocap.jsonl
+  status: data/mocap.json

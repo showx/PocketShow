@@ -458,10 +458,11 @@ def person_away_today(
     workdays: list[int] | None = None,
     min_s: float = 15.0,
     alarm_s: float = 30.0,
+    min_present_s: float = 6.0,
     present_ids: set[str] | None = None,
     skip_ids: set[str] | None = None,
 ) -> dict:
-    """按人统计上班时段离开镜头。工位上还有别人时，也会记这个人自己的离岗。客人（skip_ids）不计入。"""
+    """按人统计上班时段离开镜头。只冒一下头不算来过；工位上还有别人时，也会记这个人自己的离岗。客人（skip_ids）不计入。"""
     now = time.time() if now is None else now
     day = datetime.fromtimestamp(now).strftime("%Y-%m-%d")
     empty = {
@@ -485,6 +486,7 @@ def person_away_today(
     cap = min(now, finish)
     present_ids = present_ids or set()
     skip_ids = skip_ids or set()
+    min_present_s = max(0.0, float(min_present_s))
     per: dict[str, dict] = {}
     ordered = sorted(
         (e for e in events if float(e.get("t") or 0) > 0),
@@ -517,6 +519,14 @@ def person_away_today(
             }
         )
 
+    def visit_s(info: dict, event: dict, t: float) -> float:
+        if event.get("duration_s") is not None:
+            return max(0.0, float(event.get("duration_s") or 0))
+        enter_t = info.get("enter_t")
+        if enter_t is not None:
+            return max(0.0, t - float(enter_t))
+        return 0.0
+
     for event in ordered:
         t = float(event.get("t") or 0)
         if t < begin or t > finish:
@@ -524,28 +534,36 @@ def person_away_today(
         pid = str(event.get("person_id") or "")
         if not pid:
             continue
-        info = per.setdefault(pid, {"in": False, "seen": False, "away_start": None, "name": pid, "photo": ""})
+        info = per.setdefault(pid, {"in": False, "seen": False, "away_start": None, "enter_t": None, "name": pid, "photo": ""})
         if event.get("name"):
             info["name"] = event["name"]
         if event.get("photo"):
             info["photo"] = event["photo"]
         kind = event.get("event")
         if kind == "enter":
+            info["in"] = True
+            info["enter_t"] = t
+        elif kind == "leave":
+            info["in"] = False
+            if visit_s(info, event, t) < min_present_s:
+                info["enter_t"] = None
+                continue
             info["seen"] = True
             if info["away_start"] is not None:
-                emit(pid, info, float(info["away_start"]), t, False)
+                emit(pid, info, float(info["away_start"]), float(info["enter_t"] or t), False)
                 info["away_start"] = None
-            info["in"] = True
-        elif kind == "leave" and info["seen"]:
-            info["in"] = False
             if info["away_start"] is None:
                 info["away_start"] = t
+            info["enter_t"] = None
 
     for pid, info in per.items():
         start = info.get("away_start")
-        if start is None:
-            continue
+        enter_t = info.get("enter_t")
         if pid in present_ids:
+            if start is not None and enter_t is not None and cap - float(enter_t) >= min_present_s:
+                emit(pid, info, float(start), float(enter_t), False)
+            continue
+        if start is None:
             continue
         emit(pid, info, float(start), cap, True)
 
@@ -559,6 +577,157 @@ def person_away_today(
         "away_s": round(away_s, 1),
         "away_label": _duration(away_s),
         **stats,
+    }
+
+
+_ROSTER_LABELS = {
+    "at_desk": "在岗",
+    "away": "暂离",
+    "alarm": "离岗报警",
+    "waiting": "未到",
+    "off_hours": "下班",
+    "stale": "等待监测",
+}
+
+
+def _roster_seats(person: dict) -> list[dict]:
+    raw = person.get("seats")
+    items: list[tuple[str, dict]] = []
+    if isinstance(raw, list):
+        items = [(str(item.get("camera_id") or ""), item) for item in raw if isinstance(item, dict)]
+    elif isinstance(raw, dict):
+        items = [(str(cid), seat) for cid, seat in raw.items() if isinstance(seat, dict)]
+    out = []
+    for cid, seat in items:
+        if not cid:
+            continue
+        out.append({"camera_id": cid, "camera_name": str(seat.get("camera_name") or cid)})
+    return out
+
+
+def on_duty_roster(
+    gallery_people: list[dict],
+    snapshot: dict | None = None,
+    away_today: dict | None = None,
+    *,
+    on_duty: bool = True,
+    occupied_ids: set[str] | None = None,
+) -> dict:
+    """当前在岗名单：镜头里认到的人，或人还坐在指定工位上的，都算在岗。客人不计入在岗人数。"""
+    snapshot = snapshot or {}
+    fresh = bool(snapshot.get("fresh"))
+    present_rows = list(snapshot.get("people") or []) if fresh else []
+    gallery_by = {str(p.get("id") or ""): p for p in gallery_people if p.get("id")}
+    occupied_ids = {str(pid) for pid in (occupied_ids or set()) if pid}
+    away_live: dict[str, dict] = {}
+    for row in (away_today or {}).get("sessions") or []:
+        pid = str(row.get("person_id") or "")
+        if pid and row.get("live"):
+            away_live[pid] = row
+
+    def make(
+        pid: str,
+        *,
+        name: str,
+        photo: str = "",
+        guest: bool = False,
+        seats: list[dict] | None = None,
+        status: str,
+        duration_s: float = 0.0,
+        start_ts: str = "",
+        live: bool = False,
+    ) -> dict:
+        seats = seats or []
+        names = [str(s.get("camera_name") or s.get("camera_id") or "") for s in seats]
+        return {
+            "person_id": pid,
+            "name": name or pid,
+            "photo": photo,
+            "guest": guest,
+            "seats": seats,
+            "seat_label": "、".join(n for n in names if n),
+            "status": status,
+            "label": _ROSTER_LABELS.get(status, status),
+            "duration_s": round(float(duration_s or 0), 1),
+            "duration": _duration(float(duration_s or 0)),
+            "start_ts": start_ts,
+            "live": live,
+        }
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for row in present_rows:
+        pid = str(row.get("person_id") or "")
+        if not pid:
+            continue
+        person = gallery_by.get(pid) or {}
+        guest = bool(row["guest"]) if "guest" in row else bool(person.get("guest"))
+        rows.append(
+            make(
+                pid,
+                name=str(row.get("name") or person.get("name") or pid),
+                photo=str(row.get("photo") or person.get("photo") or ""),
+                guest=guest,
+                seats=_roster_seats(person),
+                status="at_desk",
+                duration_s=float(row.get("duration_s") or 0),
+                start_ts=str(row.get("start_ts") or ""),
+                live=True,
+            )
+        )
+        seen.add(pid)
+
+    for person in gallery_people:
+        pid = str(person.get("id") or "")
+        if not pid or pid in seen or person.get("guest"):
+            continue
+        seats = _roster_seats(person)
+        if not seats:
+            continue
+        live_away = away_live.get(pid)
+        if pid in occupied_ids:
+            status, duration_s, start_ts, live = "at_desk", 0.0, "", True
+        elif not on_duty:
+            continue
+        elif not fresh:
+            status, duration_s, start_ts, live = "stale", 0.0, "", False
+        elif live_away:
+            status = "alarm" if live_away.get("alarm") else "away"
+            duration_s = float(live_away.get("duration_s") or 0)
+            start_ts = str(live_away.get("start_ts") or "")
+            live = True
+        else:
+            status, duration_s, start_ts, live = "waiting", 0.0, "", False
+        rows.append(
+            make(
+                pid,
+                name=str(person.get("name") or pid),
+                photo=str(person.get("photo") or ""),
+                seats=seats,
+                status=status,
+                duration_s=duration_s,
+                start_ts=start_ts,
+                live=live,
+            )
+        )
+        seen.add(pid)
+
+    present = [r for r in rows if r["status"] == "at_desk"]
+    empty = [r for r in rows if r["status"] in {"away", "alarm", "waiting", "stale"}]
+    present.sort(key=lambda r: (-float(r["duration_s"]), r["name"]))
+    rank = {"alarm": 0, "away": 1, "waiting": 2, "off_hours": 3, "stale": 4}
+    empty.sort(key=lambda r: (rank.get(r["status"], 9), r["name"]))
+    staff_present = [r for r in present if not r["guest"]]
+    guests = [r for r in present if r["guest"]]
+    seated = sum(1 for p in gallery_people if not p.get("guest") and _roster_seats(p))
+    return {
+        "fresh": fresh or bool(occupied_ids),
+        "on_duty": on_duty,
+        "count": len(staff_present),
+        "guest_count": len(guests),
+        "empty_count": len(empty),
+        "seated_count": seated,
+        "people": present + empty,
     }
 
 

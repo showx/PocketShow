@@ -176,6 +176,9 @@ def test_watch_hours_api(tmp_path, monkeypatch):
     assert data["settings"]["work_start"] == "09:00"
     assert data["settings"]["work_end"] == "18:30"
     assert "today" in data
+    assert "roster" in data
+    assert "present" in data
+    assert data["roster"]["count"] == 0
     saved = client.put(
         "/api/watch",
         json={"work_start": "09:00", "work_end": "18:30", "workdays": [1, 2, 3, 4, 5], "away_s": 45},

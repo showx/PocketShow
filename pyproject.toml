@@ -8,6 +8,7 @@ dependencies = [
     "ultralytics>=8.3.0",
     "lap>=0.5.12",
     "opencv-python>=4.10.0",
+    "openvino>=2024.0",
     "numpy>=1.26.0",
     "pydantic>=2.7.0",
     "pyyaml>=6.0.1",

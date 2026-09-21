@@ -16,6 +16,13 @@ class Track:
     face_score: float = 0.0
     live: bool | None = None
     live_score: float = 0.0
+    by_seat: bool = False
+    appearance: object | None = None
+    reid_score: float = 0.0
+    xyz: tuple[float, float, float] | None = None
+    depth: float = 0.0
+    keypoints: list[dict] | None = None
+    activity: str = ""
 
     @property
     def area(self) -> float:

@@ -173,7 +173,7 @@ def test_person_away_counts_even_if_someone_else_stays():
         {"event": "enter", "t": ts(10, 0, 1), "person_id": "p002", "name": "小红"},
         {"event": "leave", "t": ts(10, 5), "person_id": "p001", "name": "小明"},
         {"event": "enter", "t": ts(10, 12), "person_id": "p001", "name": "小明"},
-        {"event": "leave", "t": ts(10, 12, 2), "person_id": "p001", "name": "小明"},
+        {"event": "leave", "t": ts(10, 20), "person_id": "p001", "name": "小明"},
     ]
     out = person_away_today(
         events,
@@ -222,3 +222,155 @@ def test_person_away_skips_guests():
     assert out["people_count"] == 1
     assert out["by_person"][0]["name"] == "小明"
     assert all(row["person_id"] != "p002" for row in out["alarms"])
+
+
+def test_person_away_ignores_one_frame_peek():
+    from pocketshow.watch import person_away_today
+
+    def ts(hour, minute, second=0):
+        return datetime(2026, 9, 1, hour, minute, second).timestamp()
+
+    events = [
+        {"event": "enter", "t": ts(10, 0), "person_id": "p005", "name": "徐璐"},
+        {
+            "event": "leave",
+            "t": ts(10, 0, 1),
+            "person_id": "p005",
+            "name": "徐璐",
+            "duration_s": 0.0,
+            "frames": 1,
+        },
+    ]
+    out = person_away_today(events, now=ts(10, 30), min_s=15, alarm_s=5)
+    assert out["away_count"] == 0
+    assert out["sessions"] == []
+    assert out["people_count"] == 0
+
+
+def test_person_away_peek_does_not_clear_away():
+    from pocketshow.watch import person_away_today
+
+    def ts(hour, minute, second=0):
+        return datetime(2026, 9, 1, hour, minute, second).timestamp()
+
+    events = [
+        {"event": "enter", "t": ts(10, 0), "person_id": "p005", "name": "徐璐"},
+        {"event": "leave", "t": ts(10, 5), "person_id": "p005", "name": "徐璐", "duration_s": 300.0, "frames": 200},
+        {"event": "enter", "t": ts(10, 12), "person_id": "p005", "name": "徐璐"},
+        {
+            "event": "leave",
+            "t": ts(10, 12, 1),
+            "person_id": "p005",
+            "name": "徐璐",
+            "duration_s": 0.2,
+            "frames": 2,
+        },
+    ]
+    out = person_away_today(events, now=ts(10, 30), min_s=15, alarm_s=30)
+    assert out["away_count"] == 1
+    live = out["sessions"][0]
+    assert live["live"] is True
+    assert live["name"] == "徐璐"
+    assert live["duration_s"] >= 1400
+
+
+def test_on_duty_roster_lists_present_and_empty_seats():
+    from pocketshow.watch import on_duty_roster
+
+    people = [
+        {
+            "id": "p001",
+            "name": "阿强",
+            "photo": "p001/cover.jpg",
+            "seats": {"office": {"camera_name": "工位区1"}},
+        },
+        {
+            "id": "p002",
+            "name": "小美",
+            "photo": "p002/cover.jpg",
+            "seats": {"office": {"camera_name": "工位区1"}},
+        },
+        {"id": "p003", "name": "路人", "guest": True},
+        {"id": "p009", "name": "没工位"},
+    ]
+    snapshot = {
+        "fresh": True,
+        "people": [
+            {"person_id": "p001", "name": "阿强", "photo": "p001/cover.jpg", "duration_s": 12, "start_ts": "10:00:00"},
+            {"person_id": "p003", "name": "路人", "guest": True, "duration_s": 3},
+        ],
+    }
+    away = {
+        "sessions": [
+            {"person_id": "p002", "live": True, "alarm": True, "duration_s": 40, "start_ts": "10:01:00"},
+        ]
+    }
+    out = on_duty_roster(people, snapshot, away, on_duty=True)
+    assert out["count"] == 1
+    assert out["guest_count"] == 1
+    assert out["empty_count"] == 1
+    assert out["seated_count"] == 2
+    by = {row["person_id"]: row for row in out["people"]}
+    assert by["p001"]["status"] == "at_desk"
+    assert by["p001"]["label"] == "在岗"
+    assert by["p002"]["status"] == "alarm"
+    assert by["p002"]["seat_label"] == "工位区1"
+    assert by["p003"]["guest"] is True
+    assert "p009" not in by
+
+
+def test_on_duty_roster_occupied_seat_counts_as_present():
+    from pocketshow.watch import on_duty_roster
+
+    people = [
+        {"id": "p001", "name": "阿强", "seats": {"office": {"camera_name": "工位区1"}}},
+        {"id": "p002", "name": "恒瑞", "seats": {"office": {"camera_name": "工位区1"}}},
+    ]
+    snapshot = {
+        "fresh": True,
+        "people": [{"person_id": "p001", "name": "阿强", "duration_s": 12, "start_ts": "18:01:00"}],
+    }
+    away = {
+        "sessions": [
+            {"person_id": "p002", "live": True, "alarm": False, "duration_s": 40, "start_ts": "18:04:05"},
+        ]
+    }
+    out = on_duty_roster(people, snapshot, away, on_duty=True, occupied_ids={"p002"})
+    assert out["count"] == 2
+    assert out["empty_count"] == 0
+    by = {row["person_id"]: row for row in out["people"]}
+    assert by["p002"]["status"] == "at_desk"
+    assert by["p002"]["label"] == "在岗"
+
+
+def test_on_duty_roster_stale_snapshot_marks_empty_seats():
+    from pocketshow.watch import on_duty_roster
+
+    people = [{"id": "p001", "name": "阿强", "seats": {"cam": {"camera_name": "A"}}}]
+    out = on_duty_roster(people, {"fresh": False, "people": [{"person_id": "p001"}]}, on_duty=True)
+    assert out["fresh"] is False
+    assert out["count"] == 0
+    assert out["people"][0]["status"] == "stale"
+    assert out["people"][0]["label"] == "等待监测"
+
+
+def test_on_duty_roster_off_hours_hides_empty_seats():
+    from pocketshow.watch import on_duty_roster
+
+    people = [
+        {"id": "p001", "name": "阿强", "seats": {"office": {"camera_name": "工位区1"}}},
+        {"id": "p003", "name": "shengsheng", "seats": {"office": {"camera_name": "工位区1"}}},
+        {"id": "p005", "name": "徐璐", "seats": {"office": {"camera_name": "工位区1"}}},
+    ]
+    snapshot = {
+        "fresh": True,
+        "people": [{"person_id": "p001", "name": "阿强", "duration_s": 12, "start_ts": "18:40:00"}],
+    }
+    out = on_duty_roster(people, snapshot, on_duty=False, occupied_ids={"p003"})
+    assert out["count"] == 2
+    assert out["empty_count"] == 0
+    by = {row["person_id"]: row for row in out["people"]}
+    assert by["p001"]["status"] == "at_desk"
+    assert by["p003"]["status"] == "at_desk"
+    assert by["p003"]["label"] == "在岗"
+    assert "p005" not in by

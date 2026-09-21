@@ -18,22 +18,31 @@ Pocket 3 没有官方第三方 SDK。PocketShow 把 **USB Webcam 取流**（画�
 - **活体**：MiniFASNet，拦纸质照片和屏幕翻拍
 - **跟拍**：死区 + PID + 速度前馈；短暂遮挡衰减最后速度，超时才重选目标
 - **云台**：`stub` 只在预览 HUD 上画 yaw/pitch；`wifi` 经 UDP 9004 发 DUML
-- **人物库**：本地管理页改名、合并重复档、上传底片、查入镜日志；可选工位离岗提醒
+- **人物库**：本地管理页改名、合并重复档、上传底片、指定工位；可选工位离岗提醒
+- **场景理解**（可选）：把画面旁路给 [MOSS-VL](https://github.com/OpenMOSS/MOSS-VL) 实时视频模型，HUD / 管理页显示「在干嘛」，不进跟拍
+- **三维重建**（可选）：把画面旁路给 [LingBot-Map](https://github.com/Robbyant/lingbot-map)，得到相机位姿和人的 3D 坐标，辅助工位匹配
+- **动作捕捉**（可选）：把画面旁路给 [FreeMoCap](https://github.com/freemocap/freemocap) / skellytracker，叠骨架并标坐着 / 站着 / 举手
 
 ## 管线
 
 ```mermaid
 flowchart TD
-  cam["Pocket 3"] -->|"USB UVC / WiFi H.264"| cap[Capture]
+  cam["Pocket 3 / 局域网相机"] -->|"USB UVC / WiFi H.264 / RTSP"| cap[Capture]
   cap --> det["YOLO11n + ByteTrack"]
-  det --> rec["YuNet + SFace + Liveness"]
+  det --> rec["YuNet + SFace + ReID"]
   rec --> lock[Target lock]
   lock --> pid["PID + deadzone + feedforward"]
   pid --> port[GimbalPort]
   port -->|stub HUD / WiFi DUML| cam
+  rec -.-> scene["MOSS-VL 实时理解"]
+  rec -.-> geomap["LingBot-Map 流式重建"]
+  rec -.-> mocap["FreeMoCap 姿态"]
+  scene -.-> hud[HUD / 管理页]
+  geomap -.-> hud
+  mocap -.-> hud
 ```
 
-`GimbalPort` 只暴露 `set_velocity` / `recenter` / `close`。换传输层不必动检测和决策。
+`GimbalPort` 只暴露 `set_velocity` / `recenter` / `close`。换传输层不必动检测和决策。MOSS-VL、LingBot-Map 与 FreeMoCap 都是旁路：模型跑在独立环境里，本机只推帧、收文本 / 位姿 / 骨架。
 
 Webcam 模式有可能与 WiFi 控制互斥：若云台无响应，把取流改成 `--source wifi`，决策层不用改。
 
@@ -82,7 +91,7 @@ pocketshow-admin
 
 **终端 2 — 监测 / 跟拍**
 
-局域网海康监控（管理页「离岗分析」里勾选要监测的通道）：
+局域网海康监控（管理页「离岗分析」监测画面上方点选要监测的通道）：
 
 ```bash
 pocketshow --source rtsp --gimbal stub
@@ -143,11 +152,81 @@ pocketshow-admin
 默认地址 [http://127.0.0.1:8765](http://127.0.0.1:8765)。跟拍进程不用关；网页里改的名字，预览里过几秒会跟上。
 
 - 同一人被拆成两条时，打开卡片选 **并入** 即可合并
-- **入镜日志** 记录每次入镜、离镜和停留时长
+- 在「离岗分析」监测画面上点人框，直接用画面里这个人登记，并记下所在摄像头的位置；点空处仍可指定工位
 - 右下角 **镜头** 十字键可手动左右 / 上下转：按住就转，松开就停，键盘方向键同样有效；**跟拍** 交回自动锁定
 - `--gimbal stub` 时只在预览 HUD 上看到 yaw/pitch；电机真转需 `--gimbal wifi`
 
-工位看护（`watch`）可在上班时段检测离岗，阈值与工作日在配置或管理页里改。
+工位看护（`watch`）可在上班时段检测离岗，阈值与工作日在配置或管理页里改。管理页「在岗人员」会列出镜头里认到的人，以及指定了工位但人不在的空位。
+
+## 接入 MOSS-VL、LingBot-Map 与 FreeMoCap
+
+三套模型都不进 PocketShow 的 Python 环境，本机只当客户端。跟拍 PID 不变。
+
+### MOSS-VL 实时场景理解
+
+在 GPU 机器上按 [MOSS-VL 说明](https://github.com/OpenMOSS/MOSS-VL/blob/main/README_zh.md) 起实时服务：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python inference/realtime/run_online_inference.py \
+  --serve --host 0.0.0.0 --port 8000
+```
+
+多路视频用 [SGLang-Omni](https://github.com/OpenMOSS/MOSS-VL/tree/main/third_party/sglang-omni)，WebSocket 地址改成 `ws://127.0.0.1:18500/v1/video/realtime`。
+
+本机 `configs/default.yaml`：
+
+```yaml
+scene:
+  enabled: true
+  backend: moss-vl
+  ws_url: ws://GPU主机:8000/v1/realtime
+  model: OpenMOSS-Team/MOSS-VL-Realtime
+  sample_fps: 1.0
+```
+
+也兼容原来的 OpenAI `chat/completions`（`backend: openai`，例如 Mage-VL / SGLang）。模型可主动沉默：回复「无事」或 `<|silence|>` 时 HUD 不刷。
+
+### LingBot-Map 流式三维重建
+
+在装好 [LingBot-Map](https://github.com/Robbyant/lingbot-map) 的 CUDA 环境里起 HTTP 服务：
+
+```bash
+python scripts/lingbot_map_serve.py --model_path /path/to/lingbot-map.pt --port 8090
+```
+
+本机：
+
+```yaml
+geomap:
+  enabled: true
+  backend: http
+  base_url: http://GPU主机:8090
+  camera_id: ""          # 空=第一路；多路填要重建的摄像机 id
+```
+
+一个 LingBot-Map 进程只维持一路 KV cache。多路就起多个 `--port`。位姿稳定后，人框会带上 3D 坐标，工位匹配优先用空间距离。自测可把 `backend` 设成 `stub`。
+
+### FreeMoCap 姿态 / 骨架
+
+[FreeMoCap](https://github.com/freemocap/freemocap) 自己的 HTTP 服务绑的是 SkellyCam 相机，不能直接收 PocketShow 的帧。在它的 `uv` 环境里起一层适配：
+
+```bash
+# 按官方 README 装好 skellytracker 后
+python scripts/freemocap_serve.py --port 8006
+# NVIDIA GPU 可改 --tracker rtmpose
+```
+
+本机：
+
+```yaml
+mocap:
+  enabled: true
+  backend: http
+  base_url: http://127.0.0.1:8006
+  camera_id: ""          # 空=所有路；多路只捕这一路 id
+```
+
+人框上会叠骨架，HUD / 管理页标「坐着 / 站着 / 举手」。自测可把 `backend` 设成 `stub`。
 
 ## 配置
 
@@ -163,6 +242,9 @@ pocketshow-admin
 | `gimbal` | `stub` 或 `wifi` |
 | `wifi` | 相机 IP / 端口、SSID、BLE 唤醒、视频分辨率 |
 | `watch` | 上班时段、离岗秒数 |
+| `scene` | MOSS-VL / OpenAI 兼容视觉模型；默认关 |
+| `geomap` | LingBot-Map HTTP 服务；默认关 |
+| `mocap` | FreeMoCap / skellytracker HTTP 服务；默认关 |
 
 命令行覆盖配置，常用参数：
 
@@ -184,7 +266,10 @@ pocketshow [--config PATH] [--source auto|usb|camera|file|wifi|rtsp]
 | `recognize` | YuNet 人脸 + SFace 特征，挂到人体框并给出稳定身份 |
 | `liveness` | MiniFASNet 活体 |
 | `gallery` / `admin` | 人物名册、相片留底、本地管理页 |
-| `appear` / `watch` | 入镜日志、工位离岗 |
+| `appear` / `watch` | 工位离岗（入镜流水只作内部去重 / 离岗统计，不再作为管理页） |
+| `scene` | MOSS-VL WebSocket / OpenAI 视觉，旁路「在干嘛」 |
+| `geomap` | LingBot-Map HTTP 客户端，旁路位姿与 3D 工位 |
+| `mocap` | FreeMoCap / skellytracker 客户端，旁路骨架与姿态 |
 | `target` | ID / 身份锁定与丢失恢复 |
 | `follow` | 画面误差 + PID |
 | `gimbal.stub` / `gimbal.wifi` | 可替换云台口 |
@@ -198,6 +283,11 @@ src/pocketshow/
 ├── recognize.py
 ├── follow.py
 ├── target.py
+├── scene.py
+├── mossvl.py
+├── geomap.py
+├── mocap.py
+├── seats.py
 ├── admin.py            # pocketshow-admin
 ├── gimbal/
 │   ├── base.py         # GimbalPort

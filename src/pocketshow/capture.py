@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 STREAM_CODES = {"main": 1, "sub": 2, "third": 3}
 STREAM_LABELS = {"main": "主码流", "sub": "子码流", "third": "第三码流"}
+STALE_FRAME_S = 2.5
+_CV_LOCK = threading.Lock()
 
 
 class FrameSource(Protocol):
@@ -30,24 +32,153 @@ class FrameSource(Protocol):
     def close(self) -> None: ...
 
 
+def looks_corrupt(frame: np.ndarray | None) -> bool:
+    """H.264 没等到 I 帧、管道错位时会出现灰底彩噪花屏。"""
+    if frame is None or frame.size == 0:
+        return True
+    if frame.ndim != 3 or frame.shape[2] < 3:
+        return True
+    height, width = frame.shape[:2]
+    if height < 16 or width < 16:
+        return True
+    small = cv2.resize(frame, (96, 54), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    mean = float(gray.mean())
+    contrast = float(gray.std())
+    if contrast < 9.0:
+        return True
+    blue = small[:, :, 0].astype(np.int16)
+    green = small[:, :, 1].astype(np.int16)
+    red = small[:, :, 2].astype(np.int16)
+    chroma = np.abs(red - green) + np.abs(green - blue) + np.abs(blue - red)
+    speck = float((chroma > 70).mean())
+    if contrast < 20.0 and speck > 0.05:
+        return True
+    if 80.0 <= mean <= 175.0 and contrast < 16.0:
+        return True
+    return False
+
+
+def should_reconnect(miss: int, *, after: int = 12, every: int = 40) -> bool:
+    if miss < after:
+        return False
+    return miss == after or miss % every == 0
+
+
+def ffmpeg_rtsp_cmd(url: str, width: int, height: int, transport: str) -> list[str]:
+    # nobuffer 会把尚未对齐的 P 帧直接吐出来，局域网监测宁可晚几帧也不要花屏。
+    # VLC 按 limited range + 高质量色度放大；默认 scale 会把监控画面拉成一层雾。
+    w, h = int(width), int(height)
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-rtsp_transport",
+        transport,
+        "-fflags",
+        "+genpts+discardcorrupt",
+        "-flags",
+        "low_delay",
+        "-i",
+        url,
+        "-an",
+        "-sn",
+        "-sws_flags",
+        "lanczos+accurate_rnd+full_chroma_int+full_chroma_inp",
+        "-vf",
+        f"scale={w}:{h}:flags=lanczos+accurate_rnd+full_chroma_int:in_range=tv:out_range=pc",
+        "-pix_fmt",
+        "bgr24",
+        "-f",
+        "rawvideo",
+        "pipe:1",
+    ]
+
+
 class OpenCvCapture:
-    def __init__(self, cap: cv2.VideoCapture, label: str, kind: str = "usb") -> None:
+    def __init__(
+        self,
+        cap: cv2.VideoCapture,
+        label: str,
+        kind: str = "usb",
+        seed: np.ndarray | None = None,
+    ) -> None:
         self.cap = cap
         self.label = label
         self.kind = kind
+        self._lock = threading.Lock()
+        self._frame: np.ndarray | None = None
+        self._stamp = 0.0
+        self._running = True
+        self._thread: threading.Thread | None = None
+        self._bad = 0
+        if seed is not None and seed.size and not looks_corrupt(seed):
+            self._frame = seed.copy()
+            self._stamp = time.monotonic()
+        if kind == "rtsp":
+            self._thread = threading.Thread(target=self._drain, daemon=True, name="rtsp-cv")
+            self._thread.start()
 
     def read(self) -> np.ndarray | None:
-        ok, frame = self.cap.read()
-        if not ok:
-            return None
-        return frame
+        if self._thread is None:
+            ok, frame = self.cap.read()
+            if not ok:
+                return None
+            return frame
+        with self._lock:
+            if self._frame is None:
+                return None
+            if time.monotonic() - self._stamp > STALE_FRAME_S:
+                return None
+            return self._frame.copy()
 
     def close(self) -> None:
-        self.cap.release()
+        self._running = False
+        thread = self._thread
+        self._thread = None
+        if thread is not None:
+            thread.join(timeout=0.8)
+
+        def _release() -> None:
+            try:
+                self.cap.release()
+            except Exception:
+                logger.debug("%s 释放失败", self.label, exc_info=True)
+
+        worker = threading.Thread(target=_release, daemon=True, name="cv-release")
+        worker.start()
+        worker.join(timeout=1.0)
+
+    def _keep(self, frame: np.ndarray) -> None:
+        if looks_corrupt(frame):
+            self._bad += 1
+            if self._bad == 1 or self._bad % 50 == 0:
+                logger.warning("%s 解码花屏，丢弃坏帧", self.label)
+            return
+        self._bad = 0
+        copied = frame.copy()
+        with self._lock:
+            self._frame = copied
+            self._stamp = time.monotonic()
+
+    def _drain(self) -> None:
+        while self._running:
+            try:
+                with _CV_LOCK:
+                    if not self._running:
+                        break
+                    ok, frame = self.cap.read()
+            except Exception:
+                break
+            if not ok or frame is None or frame.size == 0:
+                time.sleep(0.01)
+                continue
+            self._keep(frame)
 
 
 class FfmpegRtspCapture:
-    """OpenCV 打不开 RTSP 时，用本机 ffmpeg 解成最新一帧。"""
+    """独立 ffmpeg 进程解 RTSP，只保留最新一帧完整画面。"""
 
     def __init__(self, url: str, width: int, height: int, transport: str, label: str) -> None:
         self.url = url
@@ -58,34 +189,16 @@ class FfmpegRtspCapture:
         self.frame_bytes = width * height * 3
         self._lock = threading.Lock()
         self._frame: np.ndarray | None = None
+        self._stamp = 0.0
         self._running = True
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-rtsp_transport",
-            transport,
-            "-fflags",
-            "nobuffer",
-            "-flags",
-            "low_delay",
-            "-i",
-            url,
-            "-an",
-            "-sn",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "bgr24",
-            "pipe:1",
-        ]
+        self._bad = 0
+        cmd = ffmpeg_rtsp_cmd(url, width, height, transport)
         try:
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                bufsize=self.frame_bytes,
+                bufsize=0,
             )
         except FileNotFoundError as exc:
             raise RuntimeError("需要 ffmpeg 才能拉取局域网 RTSP") from exc
@@ -93,8 +206,12 @@ class FfmpegRtspCapture:
         self._reader.start()
 
     def read(self) -> np.ndarray | None:
+        if not self._running:
+            return None
         with self._lock:
             if self._frame is None:
+                return None
+            if time.monotonic() - self._stamp > STALE_FRAME_S:
                 return None
             return self._frame.copy()
 
@@ -103,20 +220,46 @@ class FfmpegRtspCapture:
         if self._proc.poll() is None:
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=2)
+                self._proc.wait(timeout=1.5)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
-        self._reader.join(timeout=1.5)
+                try:
+                    self._proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    pass
+        stdout = self._proc.stdout
+        if stdout is not None:
+            try:
+                stdout.close()
+            except Exception:
+                pass
+        self._reader.join(timeout=1.0)
+
+    def _keep(self, frame: np.ndarray) -> None:
+        if looks_corrupt(frame):
+            self._bad += 1
+            if self._bad == 1 or self._bad % 50 == 0:
+                logger.warning("%s 解码花屏，丢弃坏帧", self.label)
+            return
+        self._bad = 0
+        with self._lock:
+            self._frame = frame
+            self._stamp = time.monotonic()
 
     def _read_loop(self) -> None:
         assert self._proc.stdout is not None
+        buf = bytearray()
         while self._running and self._proc.poll() is None:
-            raw = self._proc.stdout.read(self.frame_bytes)
-            if not raw or len(raw) < self.frame_bytes:
+            need = self.frame_bytes - len(buf)
+            piece = self._proc.stdout.read(need)
+            if not piece:
                 break
-            frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
-            with self._lock:
-                self._frame = frame
+            buf.extend(piece)
+            if len(buf) < self.frame_bytes:
+                continue
+            frame = np.frombuffer(bytes(buf), dtype=np.uint8).reshape((self.height, self.width, 3)).copy()
+            buf.clear()
+            self._keep(frame)
         self._running = False
 
 
@@ -148,8 +291,13 @@ def list_avfoundation_names() -> list[str]:
             capture_output=True,
             text=True,
             check=False,
+            timeout=3,
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
+        return []
+    except subprocess.TimeoutExpired:
+        logger.warning("列举摄像头超时")
         return []
     names: list[str] = []
     in_video = False
@@ -510,7 +658,7 @@ class CaptureStore:
             wanted = {str(item) for item in monitor_ids}
             cameras = list_cameras(self.rtsp)
             if self.capture.source == "rtsp" and cameras and not wanted:
-                raise ValueError("至少勾选一路监测")
+                raise ValueError("至少选一路监测")
             unknown = wanted - {cam.id for cam in cameras}
             if unknown:
                 raise ValueError("找不到摄像机 " + "、".join(sorted(unknown)))
@@ -698,10 +846,11 @@ def open_file(path: str) -> OpenCvCapture:
     return OpenCvCapture(cap, path, kind="file")
 
 
-def _read_any(cap: cv2.VideoCapture, attempts: int = 40, delay_s: float = 0.08) -> np.ndarray | None:
+def _read_any(cap: cv2.VideoCapture, attempts: int = 50, delay_s: float = 0.1) -> np.ndarray | None:
+    """多等几秒，避开海康 GOP 开头那些没 I 帧的花屏。"""
     for _ in range(attempts):
         ok, frame = cap.read()
-        if ok and frame is not None and frame.size:
+        if ok and frame is not None and frame.size and not looks_corrupt(frame):
             return frame
         time.sleep(delay_s)
     return None
@@ -755,6 +904,13 @@ def camera_as_rtsp(shared: RtspConfig, cam: RtspCamera) -> RtspConfig:
     )
 
 
+def reopen_rtsp(cfg: RtspConfig, camera_id: str) -> FrameSource:
+    cameras = [cam for cam in list_cameras(cfg) if cam.id == camera_id]
+    if not cameras:
+        raise RuntimeError(f"找不到摄像机 {camera_id}")
+    return open_rtsp(camera_as_rtsp(cfg, cameras[0]))
+
+
 def open_rtsp_many(cfg: RtspConfig, only_id: str | None = None) -> list[tuple[RtspCamera, FrameSource]]:
     cameras = list_cameras(cfg)
     if only_id:
@@ -764,7 +920,7 @@ def open_rtsp_many(cfg: RtspConfig, only_id: str | None = None) -> list[tuple[Rt
     else:
         cameras = [cam for cam in cameras if cam.monitor]
         if not cameras:
-            raise RuntimeError("还没勾选要监测的摄像机")
+            raise RuntimeError("还没选要监测的摄像机")
     opened: list[tuple[RtspCamera, FrameSource]] = []
     errors: list[str] = []
     for cam in cameras:
@@ -800,6 +956,61 @@ def grid_layout(count: int) -> tuple[int, int]:
     return 3, 5
 
 
+def native_mosaic_size(
+    images: list[np.ndarray],
+    fallback: tuple[int, int] = (1280, 720),
+) -> tuple[int, int]:
+    """按源画面拼宫格，不放大、不跟着窗口拉伸。"""
+    sizes = [(im.shape[1], im.shape[0]) for im in images if im is not None and getattr(im, "size", 0)]
+    if not sizes:
+        return fallback
+    cell_w = max(width for width, _height in sizes)
+    cell_h = max(height for _width, height in sizes)
+    rows, cols = grid_layout(len(images))
+    return max(16, cell_w) * cols, max(16, cell_h) * rows
+
+
+def pane_from_norm(
+    nx: float,
+    ny: float,
+    count: int,
+    *,
+    canvas: tuple[int, int] | list[int] | None = None,
+    cameras: list[dict] | None = None,
+) -> tuple[int, float, float] | None:
+    """宫格归一化点击 → (路序号, 源画面 nx, 源画面 ny)。"""
+    if count <= 0:
+        return None
+    try:
+        nx = float(nx)
+        ny = float(ny)
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
+        return None
+    rows, cols = grid_layout(count)
+    col = cols - 1 if nx >= 1.0 else min(cols - 1, int(nx * cols))
+    row = rows - 1 if ny >= 1.0 else min(rows - 1, int(ny * rows))
+    index = row * cols + col
+    if index >= count:
+        return None
+    local_x = nx * cols - col
+    local_y = ny * rows - row
+    cam = cameras[index] if cameras and index < len(cameras) else None
+    src_w = int((cam or {}).get("src_w") or 0)
+    src_h = int((cam or {}).get("src_h") or 0)
+    if src_w > 0 and src_h > 0:
+        if canvas is not None and len(canvas) >= 2:
+            cell_w, cell_h = grid_cell_size(count, (int(canvas[0]), int(canvas[1])))
+        else:
+            cell_w, cell_h = grid_cell_size(count)
+        mapped = letterbox_to_source(local_x * cell_w, local_y * cell_h, cell_w, cell_h, src_w, src_h)
+        if mapped is None:
+            return None
+        return index, mapped[0] / src_w, mapped[1] / src_h
+    return index, max(0.0, min(1.0, local_x)), max(0.0, min(1.0, local_y))
+
+
 def grid_cell_size(count: int, canvas: tuple[int, int] = (1920, 1080)) -> tuple[int, int]:
     rows, cols = grid_layout(count)
     width = max(16, int(canvas[0]) // cols)
@@ -807,23 +1018,86 @@ def grid_cell_size(count: int, canvas: tuple[int, int] = (1920, 1080)) -> tuple[
     return width, height
 
 
+def grid_origin(count: int, canvas: tuple[int, int] = (1920, 1080)) -> tuple[int, int, int, int]:
+    """宫格左上角和单格尺寸。余数居中，避免整幅再拉伸一次。"""
+    rows, cols = grid_layout(count)
+    cell_w, cell_h = grid_cell_size(count, canvas)
+    canvas_w = max(320, int(canvas[0]))
+    canvas_h = max(240, int(canvas[1]))
+    ox = (canvas_w - cell_w * cols) // 2
+    oy = (canvas_h - cell_h * rows) // 2
+    return ox, oy, cell_w, cell_h
+
+
+def letterbox_geometry(
+    src_w: int,
+    src_h: int,
+    cell_w: int,
+    cell_h: int,
+) -> tuple[int, int, int, int]:
+    """源画面放进格子的位置。只缩小不放大，空余留黑边。"""
+    cell_w = max(1, int(cell_w))
+    cell_h = max(1, int(cell_h))
+    src_w = max(1, int(src_w))
+    src_h = max(1, int(src_h))
+    scale = min(1.0, cell_w / src_w, cell_h / src_h)
+    nw = max(1, min(cell_w, int(round(src_w * scale))))
+    nh = max(1, min(cell_h, int(round(src_h * scale))))
+    return (cell_w - nw) // 2, (cell_h - nh) // 2, nw, nh
+
+
+def letterbox_into(image: np.ndarray, cell_w: int, cell_h: int) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """按原分辨率放进格子，大于格子才缩小。返回 (格子图, (x0, y0, nw, nh))。"""
+    cell_w = max(1, int(cell_w))
+    cell_h = max(1, int(cell_h))
+    tile = np.zeros((cell_h, cell_w, 3), dtype=np.uint8)
+    if image is None or image.size == 0:
+        return tile, (0, 0, 0, 0)
+    src_h, src_w = image.shape[:2]
+    if src_w < 1 or src_h < 1:
+        return tile, (0, 0, 0, 0)
+    x0, y0, nw, nh = letterbox_geometry(src_w, src_h, cell_w, cell_h)
+    if nw == src_w and nh == src_h:
+        resized = image
+    else:
+        resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_AREA)
+    tile[y0 : y0 + nh, x0 : x0 + nw] = resized
+    return tile, (x0, y0, nw, nh)
+
+
+def letterbox_to_source(
+    local_x: float,
+    local_y: float,
+    cell_w: int,
+    cell_h: int,
+    src_w: int,
+    src_h: int,
+) -> tuple[int, int] | None:
+    """格子内像素 → 源画面像素。点到黑边返回 None。"""
+    if src_w < 1 or src_h < 1 or cell_w < 1 or cell_h < 1:
+        return None
+    x0, y0, nw, nh = letterbox_geometry(src_w, src_h, cell_w, cell_h)
+    if not (x0 <= local_x < x0 + nw and y0 <= local_y < y0 + nh):
+        return None
+    ox = int((local_x - x0) * src_w / nw)
+    oy = int((local_y - y0) * src_h / nh)
+    return max(0, min(src_w - 1, ox)), max(0, min(src_h - 1, oy))
+
+
 def compose_grid(images: list[np.ndarray], canvas: tuple[int, int] = (1920, 1080)) -> np.ndarray:
     canvas_w = max(320, int(canvas[0]))
     canvas_h = max(240, int(canvas[1]))
+    grid = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
     if not images:
-        return np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
-    rows, cols = grid_layout(len(images))
-    cell_w, cell_h = grid_cell_size(len(images), (canvas_w, canvas_h))
-    tiles: list[np.ndarray] = []
-    for index in range(rows * cols):
-        if index < len(images):
-            tiles.append(cv2.resize(images[index], (cell_w, cell_h)))
-        else:
-            tiles.append(np.zeros((cell_h, cell_w, 3), dtype=np.uint8))
-    row_imgs = [np.hstack(tiles[row * cols : (row + 1) * cols]) for row in range(rows)]
-    grid = np.vstack(row_imgs)
-    if grid.shape[1] != canvas_w or grid.shape[0] != canvas_h:
-        grid = cv2.resize(grid, (canvas_w, canvas_h))
+        return grid
+    ox, oy, cell_w, cell_h = grid_origin(len(images), (canvas_w, canvas_h))
+    cols = grid_layout(len(images))[1]
+    for index, image in enumerate(images):
+        row, col = divmod(index, cols)
+        tile, _ = letterbox_into(image, cell_w, cell_h)
+        y = oy + row * cell_h
+        x = ox + col * cell_w
+        grid[y : y + cell_h, x : x + cell_w] = tile
     return grid
 
 
@@ -831,15 +1105,38 @@ def pane_index(x: int, y: int, count: int, canvas: tuple[int, int] = (1920, 1080
     if count <= 0:
         return None
     rows, cols = grid_layout(count)
-    cell_w, cell_h = grid_cell_size(count, canvas)
-    col = x // cell_w
-    row = y // cell_h
+    ox, oy, cell_w, cell_h = grid_origin(count, canvas)
+    if x < ox or y < oy:
+        return None
+    col = (x - ox) // cell_w
+    row = (y - oy) // cell_h
     if not (0 <= col < cols and 0 <= row < rows):
         return None
     index = row * cols + col
     if 0 <= index < count:
         return index
     return None
+
+
+def pane_source_xy(
+    x: int,
+    y: int,
+    count: int,
+    canvas: tuple[int, int],
+    src_w: int,
+    src_h: int,
+) -> tuple[int, int, int] | None:
+    """窗口点击 → (路序号, 源图 x, 源图 y)。"""
+    index = pane_index(x, y, count, canvas)
+    if index is None:
+        return None
+    ox, oy, cell_w, cell_h = grid_origin(count, canvas)
+    col = (x - ox) // max(cell_w, 1)
+    row = (y - oy) // max(cell_h, 1)
+    mapped = letterbox_to_source(x - ox - col * cell_w, y - oy - row * cell_h, cell_w, cell_h, src_w, src_h)
+    if mapped is None:
+        return None
+    return index, mapped[0], mapped[1]
 
 
 def open_rtsp(cfg: RtspConfig) -> FrameSource:
@@ -853,8 +1150,9 @@ def open_rtsp(cfg: RtspConfig) -> FrameSource:
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     frame = _read_any(cap)
     if frame is not None:
-        logger.info("打开 %s", redact_rtsp_url(url))
-        return OpenCvCapture(cap, label, kind="rtsp")
+        height, width = frame.shape[:2]
+        logger.info("打开 %s %sx%s", redact_rtsp_url(url), width, height)
+        return OpenCvCapture(cap, label, kind="rtsp", seed=frame)
     cap.release()
     logger.warning("OpenCV 打不开 RTSP，改用 ffmpeg %s", redact_rtsp_url(url))
     width, height = _ffprobe_size(url, live.transport)

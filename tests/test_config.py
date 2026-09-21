@@ -12,8 +12,20 @@ def test_load_default_yaml():
     assert settings.detect.imgsz == 1280
     assert settings.detect.conf == 0.2
     assert settings.detect.far_pass
+    assert settings.detect.far_ratio == 1.0
+    assert settings.detect.far_rows == 2
     assert settings.recognize.det_min_face == 12
     assert settings.recognize.liveness_min_face == 40
+    assert settings.recognize.match_threshold == 0.50
+    assert settings.recognize.match_margin == 0.06
+    assert settings.recognize.match_min_face == 18
+    assert settings.recognize.id_min_face == 28
+    assert settings.recognize.id_confirm == 2
+    assert settings.recognize.seats is True
+    assert settings.recognize.seat_min_hits == 3
+    assert settings.recognize.seat_confirm == 2
+    assert settings.recognize.reid is True
+    assert settings.recognize.reid_threshold == 0.48
     assert settings.gimbal.backend == "stub"
     assert settings.recognize.enabled
     assert settings.recognize.liveness
@@ -24,6 +36,18 @@ def test_load_default_yaml():
     assert settings.watch.work_end == "18:30"
     assert settings.watch.workdays == [1, 2, 3, 4, 5]
     assert settings.preview == "data/preview.jpg"
+    assert settings.scene.enabled is False
+    assert settings.scene.backend == "moss-vl"
+    assert settings.scene.model == "OpenMOSS-Team/MOSS-VL-Realtime"
+    assert settings.scene.interval_s == 8.0
+    assert settings.scene.sample_fps == 1.0
+    assert settings.scene.ws_url == "ws://127.0.0.1:8000/v1/realtime"
+    assert settings.geomap.enabled is False
+    assert settings.geomap.backend == "http"
+    assert settings.geomap.base_url == "http://127.0.0.1:8090"
+    assert settings.mocap.enabled is False
+    assert settings.mocap.backend == "http"
+    assert settings.mocap.base_url == "http://127.0.0.1:8006"
 
 
 def test_ensure_local_config_copies_example(tmp_path):
