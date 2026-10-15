@@ -483,7 +483,35 @@ def build_gimbal(settings: Settings, client: DjiUdpClient | None):
     return gimbal, "wifi"
 
 
+def _launch_rust(argv: list[str] | None = None) -> int:
+    """跟拍只跑 Rust 程序。这个入口只负责找到二进制并替换掉当前进程。"""
+    import os
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    root = Path(__file__).resolve().parents[2]
+    env_bin = os.environ.get("POCKETSHOW_BIN")
+    candidates = [
+        Path(env_bin) if env_bin else None,
+        root / "rust" / "target" / "release" / "pocketshow",
+        root / "rust" / "target" / "debug" / "pocketshow",
+    ]
+    exe = next((path for path in candidates if path is not None and path.is_file()), None)
+    if exe is None:
+        print(
+            "还没有 Rust 程序。在仓库里执行：\n"
+            "cargo build --release --manifest-path rust/Cargo.toml --features app --bin pocketshow",
+            file=sys.stderr,
+        )
+        return 1
+    os.execv(str(exe), [str(exe), *args])
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
+    return _launch_rust(argv)
+
+
+def _python_main_unused(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

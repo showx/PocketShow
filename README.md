@@ -51,6 +51,7 @@ Webcam 模式有可能与 WiFi 控制互斥：若云台无响应，把取流改�
 | 项 | 说明 |
 |----|------|
 | Python | 3.11+ |
+| Rust | 1.74+（`rustup`）。安装时编译跟拍控制核心 |
 | 系统 | macOS（Apple Silicon 走 MPS） |
 | 相机 | Pocket 3 用数据线开 Webcam，或连相机 WiFi 热点 |
 | 可选 | WiFi 视频回退需要本机 `ffmpeg` |
@@ -68,42 +69,53 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+这一步会编译 Rust 扩展 `pocketshow._core`（DUML、UDP 会话、云台发送、跟拍 PID）。本机需要已安装 `rustc` 和 `cargo`。
+
 `configs/default.yaml` 只留在本机（含摄像机地址、密码等），不要提交。仓库里的模板是 [`configs/default.example.yaml`](configs/default.example.yaml)；若本地还没有 `default.yaml`，首次运行会自动复制一份。
+
+## Rust 一体程序
+
+跟拍是一个桌面窗口：USB、图片、视频、Pocket 3 WiFi 画面、RTSP、云台、蓝牙唤醒和加入相机热点都在里面。装好之后的 `pocketshow` 命令也是启动这个窗口。
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml --features app --bin pocketshow
+./rust/target/release/pocketshow --source usb --gimbal stub
+# 图片或视频：--source file --file /path/to/clip.mp4
+# 相机 WiFi 画面和云台：--source wifi --gimbal wifi --join-wifi --ssid OsmoPocket3-XXXX --password '密码'
+# 相机 WiFi 没开：再加上 --ble
+# 局域网摄像机：--source rtsp --rtsp-host 192.168.1.64 --stream sub
+```
+
+连不上相机会直接退出。没有摄像头时用 `--source test` 看窗口和按键。
+
+| 按键 | 作用 |
+|------|------|
+| 鼠标点人物框 | 锁定这个人 |
+| `n` / `p` | 下一个 / 上一个 |
+| `c` | 取消锁定，改跟画面里最大的人 |
+| 方向键 | 按住手动转云台，松开交回跟拍 |
+| `r` | 云台回中 |
+| 空格 | 停转 / 继续 |
+| `q` / `Esc` | 退出 |
+
+窗口标题是状态：跟或停、人名、yaw / pitch、人物库人数。绿框是锁定目标，白框是其他人，黄框是人脸。认人用 YuNet + SFace，余弦阈值默认 0.363；连续看到陌生人会记成「人物A / 人物B…」，写到 `data/identities.json`。
 
 ## 启动
 
-进入仓库后，**每个新开的终端都要先激活虚拟环境**，否则找不到 `pocketshow` 命令：
+打开桌面窗口：左边是监测画面，右边是人物和镜头。点人锁定，方向键或按钮转云台。
 
 ```bash
-cd PocketShow
-source .venv/bin/activate
+cargo build --release --manifest-path rust/Cargo.toml --features app --bin pocketshow
+./rust/target/release/pocketshow --source usb --gimbal stub
 ```
 
-日常用两路：一路网页后台，一路拉流监测。开两个终端，都先 `source .venv/bin/activate`。
-
-**终端 1 — 管理页**
+局域网摄像机：
 
 ```bash
-pocketshow-admin
+./rust/target/release/pocketshow --source rtsp --rtsp-host 192.168.1.64 --stream sub --gimbal stub
 ```
 
-浏览器打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。`--no-browser` 可以不自动弹窗。
-
-**终端 2 — 监测 / 跟拍**
-
-局域网海康监控（管理页「离岗分析」监测画面上方点选要监测的通道）：
-
-```bash
-pocketshow --source rtsp --gimbal stub
-```
-
-笔记本摄像头或 Pocket 3 USB（云台只画在预览上，电机不转）：
-
-```bash
-pocketshow --gimbal stub
-```
-
-管理页「离岗分析」最上栏会同步桌面窗口那份画布。退出：监测窗口按 `q`，两个终端都可以 `Ctrl+C`。
+退出：预览窗口按 `q`。
 
 若提示 `command not found: pocketshow`，多半是没激活 `.venv`，或还没做过上面的安装。
 
@@ -272,8 +284,9 @@ pocketshow [--config PATH] [--source auto|usb|camera|file|wifi|rtsp]
 | `mocap` | FreeMoCap / skellytracker 客户端，旁路骨架与姿态 |
 | `target` | ID / 身份锁定与丢失恢复 |
 | `follow` | 画面误差 + PID |
-| `gimbal.stub` / `gimbal.wifi` | 可替换云台口 |
-| `pocket3` | DUML、UDP 9004、可选 BLE / 加入热点 |
+| `gimbal.stub` / `gimbal.wifi` | 可替换云台口。WiFi 的 30Hz 发送在 Rust 里 |
+| `pocket3` | 调用 Rust 会话：DUML、UDP 9004；BLE / 加入热点仍是 Python |
+| `rust/` | 控制核心，以及 `pocketshow` 一体程序（检测、认人、跟拍、云台、预览窗口） |
 
 ```
 src/pocketshow/

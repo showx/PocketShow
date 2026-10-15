@@ -1,4 +1,7 @@
 .venv/
+rust/target/
+src/pocketshow/*.so
+src/pocketshow/*.dylib
 venv/
 __pycache__/
 *.py[cod]

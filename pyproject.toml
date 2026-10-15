@@ -27,11 +27,17 @@ pocketshow = "pocketshow.app:main"
 pocketshow-admin = "pocketshow.admin:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "setuptools-rust>=1.10", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[[tool.setuptools-rust.ext-modules]]
+target = "pocketshow._core"
+path = "rust/Cargo.toml"
+binding = "PyO3"
+features = ["extension-module"]
 
 [tool.setuptools.package-data]
 pocketshow = ["admin.html", "bytetrack.yaml"]

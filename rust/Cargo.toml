@@ -1,0 +1,53 @@
+[package]
+name = "pocketshow-core"
+version = "0.1.0"
+edition = "2021"
+description = "PocketShow 实时控制核心：DUML、UDP 会话、云台环、跟拍 PID"
+license = "UNLICENSED"
+publish = false
+
+[lib]
+name = "pocketshow_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+socket2 = "0.6"
+pyo3 = { version = "0.26", optional = true }
+anyhow = { version = "1", optional = true }
+eframe = { version = "0.32", optional = true }
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+ndarray = { version = "0.17", optional = true }
+nokhwa = { version = "0.10", optional = true, default-features = false, features = ["input-native"] }
+ort = { version = "=2.0.0-rc.14", optional = true, features = ["ndarray"] }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+serde_yaml = { version = "0.9", optional = true }
+btleplug = { version = "0.11", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
+uuid = { version = "1", optional = true }
+
+[[bin]]
+name = "pocketshow"
+path = "src/bin/pocketshow/main.rs"
+required-features = ["app"]
+
+[build-dependencies]
+pyo3-build-config = "0.26"
+
+[features]
+# setuptools-rust 编译扩展时自动打开。打开后不链接 libpython，由解释器加载。
+extension-module = ["dep:pyo3", "pyo3/extension-module"]
+app = [
+    "dep:anyhow",
+    "dep:eframe",
+    "dep:image",
+    "dep:ndarray",
+    "dep:nokhwa",
+    "dep:ort",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:serde_yaml",
+    "dep:btleplug",
+    "dep:tokio",
+    "dep:uuid",
+]
